@@ -1,0 +1,7 @@
+**/bin/
+**/obj/
+**/AppX/
+.vs/
+ui-test-artifacts/
+*.user
+*.pfx
