@@ -65,13 +65,15 @@ try {
     } while (-not $main -and [DateTime]::UtcNow -lt $deadline)
     if (-not $main) { throw 'The tray popup did not appear.' }
     $hwnd = "$($main.hwnd)"
+    # Sticky notes already on the desktop are separate windows by design.
+    $stickies = @($windows | Where-Object { $_.title -notin 'PopupHost', 'MiniInk' }).Count
     $family = (Get-AppxPackage -Name '79F360F7-8614-43F8-BA5C-65F81BCEA4E2').PackageFamilyName
     if (-not $family) { throw 'MiniInk package identity not found.' }
     $noteFolder = Join-Path $env:LOCALAPPDATA "Packages\$family\LocalState\Notes"
     if (Element 'BackToNotes') { Ui @('invoke', 'BackToNotes') | Out-Null }
     Ui @('wait-for', 'NewNote', '-t', '10000') | Out-Null
     Test 'Library is entirely in one tray popup' {
-        if (@($windows | Where-Object { $_.title -ne 'PopupHost' }).Count -ne 1) { throw 'An additional app window is open.' }
+        if (@($windows | Where-Object { $_.title -ne 'PopupHost' }).Count -ne (1 + $stickies)) { throw 'An additional app window is open.' }
         Capture '01-library.png'
     }
     Test 'New note stays in the same window' {
@@ -79,7 +81,7 @@ try {
         Ui @('wait-for', 'NoteTitle', '-t', '10000')
         Ui @('set-value', 'NoteTitle', $marker)
         $windows = @(Checked @('ui', 'list-windows', '-a', "$AppPid", '--json') | ConvertFrom-Json)
-        if (@($windows | Where-Object { $_.title -ne 'PopupHost' }).Count -ne 1) { throw 'New note opened a separate window.' }
+        if (@($windows | Where-Object { $_.title -ne 'PopupHost' }).Count -ne (1 + $stickies)) { throw 'New note opened a separate window.' }
     }
     $canvas = Element 'NoteCanvas'
     if (-not $canvas -or $canvas.width -le 0) { throw 'Canvas bounds unavailable.' }
@@ -152,6 +154,38 @@ try {
         Ui @('set-value', 'TextBox', $term)
         Ui @('wait-for', $marker, '-t', '5000')
         Capture '03-search.png'
+    }
+    Test 'Stack flips to the blank page and back' {
+        Ui @('click', $marker)
+        Ui @('wait-for', 'NoteTitle', '--value', $marker, '-t', '10000')
+        Ui @('wait-for', 'StackPosition', '--value', '1 of', '--contains', '-t', '5000')
+        Ui @('invoke', 'NewerNote')
+        Ui @('wait-for', 'StackPosition', '--value', 'New page', '-t', '5000')
+        Ui @('invoke', 'OlderNote')
+        Ui @('wait-for', 'NoteTitle', '--value', $marker, '-t', '5000')
+    }
+    Test 'Tear-off opens a sticky window that pins and goes back' {
+        $id = (Note).Id
+        $layoutPath = Join-Path $noteFolder '..\StickyNotes.json'
+        function Placement { @(Get-Content -LiteralPath $layoutPath -Raw | ConvertFrom-Json) | Where-Object NoteId -eq $id }
+        Ui @('invoke', 'TearOff')
+        $deadline = [DateTime]::UtcNow.AddSeconds(10)
+        do {
+            Start-Sleep -Milliseconds 500
+            $sticky = @(Checked @('ui', 'list-windows', '-a', "$AppPid", '--json') | ConvertFrom-Json) |
+                Where-Object { $_.title -eq $marker } | Select-Object -First 1
+        } while (-not $sticky -and [DateTime]::UtcNow -lt $deadline)
+        if (-not $sticky) { throw 'Tear-off did not open a sticky window.' }
+        if (-not (Placement)) { throw 'The sticky window was not saved for the next launch.' }
+        Checked @('ui', 'invoke', 'PinNote', '-w', "$($sticky.hwnd)") | Out-Null
+        Start-Sleep -Seconds 1
+        if (-not (Placement).Pinned) { throw 'Pinning was not saved.' }
+        $path = Join-Path $ArtifactDirectory '04-sticky.png'
+        Checked @('ui', 'screenshot', '--capture-screen', '--output', $path, '-w', "$($sticky.hwnd)") | Out-Null
+        $screenshots.Add($path)
+        Checked @('ui', 'invoke', 'ReturnToStack', '-w', "$($sticky.hwnd)") | Out-Null
+        Ui @('wait-for', 'NoteTitle', '--value', $marker, '-t', '10000')
+        if (Placement) { throw 'The note stayed on the desktop after being put back.' }
     }
 } catch {
     $results.Add(@{ name='UI execution'; status='FAIL'; detail="$_" })

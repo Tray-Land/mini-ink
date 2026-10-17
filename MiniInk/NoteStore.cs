@@ -10,6 +10,7 @@ public sealed class NoteStore(string folder)
     private bool _loaded;
     public string Folder { get; } = folder;
     public IReadOnlyList<Note> All => _notes.Values.OrderByDescending(n => n.Updated).ToArray();
+    public Note? Find(Guid id) => _notes.GetValueOrDefault(id);
     public List<string> LoadErrors { get; } = [];
     public event EventHandler? Changed;
 

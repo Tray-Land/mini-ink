@@ -10,6 +10,7 @@
             <RowDefinition Height="Auto"/>
             <RowDefinition Height="*"/>
             <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
         </Grid.RowDefinitions>
         <Grid ColumnSpacing="12">
             <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
@@ -25,7 +26,7 @@
             <ListView x:Name="NotesList" IsItemClickEnabled="True" ItemClick="NotesList_ItemClick"
                       SelectionMode="None" AutomationProperties.AutomationId="NotesList">
                 <ListView.ItemTemplate>
-                    <DataTemplate x:DataType="local:Note">
+                    <DataTemplate x:DataType="local:LibraryItem">
                         <Grid Padding="0,8" RowSpacing="4">
                             <Grid.RowDefinitions>
                                 <RowDefinition Height="Auto"/>
@@ -43,7 +44,14 @@
             <TextBlock x:Name="Empty" Text="No notes yet. Capture your first idea."
                        HorizontalAlignment="Center" VerticalAlignment="Center" TextWrapping="Wrap"/>
         </Grid>
-        <TextBlock Grid.Row="4" Text="Stored on this device. Handwriting is indexed automatically."
+        <Grid Grid.Row="4" ColumnSpacing="12">
+            <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+            <TextBlock Text="Open to a fresh page" VerticalAlignment="Center" TextWrapping="Wrap"/>
+            <ComboBox x:Name="FreshAfter" Grid.Column="1" MinWidth="160" SelectionChanged="FreshAfter_SelectionChanged"
+                      AutomationProperties.Name="Open to a fresh page" AutomationProperties.AutomationId="FreshAfter"
+                      ToolTipService.ToolTip="How long MiniInk must be put down before it opens on a blank page instead of the last note"/>
+        </Grid>
+        <TextBlock Grid.Row="5" Text="Stored on this device. Handwriting is indexed automatically."
                    Style="{ThemeResource CaptionTextBlockStyle}" TextWrapping="Wrap"
                    Foreground="{ThemeResource TextFillColorSecondaryBrush}"/>
     </Grid>

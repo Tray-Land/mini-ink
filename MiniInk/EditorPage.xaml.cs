@@ -35,6 +35,8 @@ public sealed partial class EditorPage : Page
     private bool _closing;
     private bool _inking;
     private bool _suspended;
+    private bool _isDraft;
+    private string _titleText;
     private readonly TaskCompletionSource _loadComplete = new();
     private bool _pointerDown;
     private bool _dragging;
@@ -44,12 +46,26 @@ public sealed partial class EditorPage : Page
     private PointerDeviceType _pointerType;
     private sealed record InkGroup(Rect Bounds, HashSet<uint> StrokeIds);
 
-    public EditorPage(Note note)
+    public Guid NoteId => _note.Id;
+    // A blank page that has not been written to disk yet.
+    public bool IsDraft => _isDraft;
+    public bool IsBlankPage => _isDraft && string.IsNullOrWhiteSpace(NoteTitle.Text) &&
+        _texts.All(t => string.IsNullOrWhiteSpace(t.Text)) && Ink.InkPresenter.StrokeContainer.GetStrokes().Count == 0;
+    public string SavedTitle => string.IsNullOrWhiteSpace(NoteTitle.Text) ? Note.Untitled : NoteTitle.Text.Trim();
+    public event EventHandler? TitleChanged;
+    // Raised when a blank page is first written to disk.
+    public event EventHandler? Written;
+
+    public EditorPage(Note note, bool draft = false, bool sticky = false)
     {
         _note = note;
+        _isDraft = draft;
         _texts = note.Texts.Select(t => new TextNote { Id = t.Id, Text = t.Text, X = t.X, Y = t.Y }).ToList();
         InitializeComponent();
-        NoteTitle.Text = note.Title;
+        _titleText = note.Title == Note.Untitled ? "" : note.Title;
+        NoteTitle.Text = _titleText;
+        if (sticky)
+            LibraryButton.Visibility = StackActions.Visibility = Hint.Visibility = StackPosition.Visibility = Visibility.Collapsed;
         Ink.InkPresenter.InputDeviceTypes = CoreInputDeviceTypes.Pen;
         Ink.InkPresenter.UpdateDefaultDrawingAttributes(new InkDrawingAttributes
         {
@@ -104,16 +120,9 @@ public sealed partial class EditorPage : Page
                 await Ink.InkPresenter.StrokeContainer.LoadAsync(stream.GetInputStreamAt(0));
             }
             RenderText();
-            Rect inkBounds = Ink.InkPresenter.StrokeContainer.BoundingRect;
-            Surface.Width = Math.Max(_note.CanvasWidth, inkBounds.IsEmpty ? 400 : inkBounds.Right + 16);
-            Surface.Height = Math.Max(_note.CanvasHeight, inkBounds.IsEmpty ? 400 : inkBounds.Bottom + 16);
-            foreach (TextNote text in _texts)
-            {
-                Surface.Width = Math.Max(Surface.Width, text.X + 220);
-                Surface.Height = Math.Max(Surface.Height, text.Y + TextHeight(text));
-            }
+            FitSurface();
             _loaded = true;
-            Status.Text = "Saved on this device";
+            Status.Text = _isDraft ? "Blank page - kept once you write on it" : "Saved on this device";
             if (!string.IsNullOrEmpty(_note.IndexError))
                 ShowError($"Handwriting index needs a retry: {_note.IndexError}");
         }
@@ -152,10 +161,44 @@ public sealed partial class EditorPage : Page
         Changed(inkChanged: true);
     }
 
-    private void Title_TextChanged(object sender, TextChangedEventArgs e) => Changed();
+    private void CanvasScroll_SizeChanged(object sender, SizeChangedEventArgs e)
+    {
+        if (_loaded)
+            FitSurface();
+    }
+
+    // The page fills its window, and grows past it only for content placed further out.
+    private void FitSurface()
+    {
+        Size content = ContentSize();
+        Surface.Width = Math.Max(content.Width, CanvasScroll.ActualWidth);
+        Surface.Height = Math.Max(content.Height, CanvasScroll.ActualHeight);
+    }
+
+    private Size ContentSize()
+    {
+        Rect inkBounds = Ink.InkPresenter.StrokeContainer.BoundingRect;
+        double width = Math.Max(_note.CanvasWidth, inkBounds.IsEmpty ? 0 : inkBounds.Right + 16);
+        double height = Math.Max(_note.CanvasHeight, inkBounds.IsEmpty ? 0 : inkBounds.Bottom + 16);
+        foreach (TextNote text in _texts)
+        {
+            width = Math.Max(width, text.X + 220);
+            height = Math.Max(height, text.Y + TextHeight(text));
+        }
+        return new Size(width, height);
+    }
+
+    private void Title_TextChanged(object sender, TextChangedEventArgs e)
+    {
+        if (NoteTitle.Text == _titleText)
+            return;
+        _titleText = NoteTitle.Text;
+        TitleChanged?.Invoke(this, EventArgs.Empty);
+        Changed();
+    }
     private void TextEditor_TextChanged(object sender, TextChangedEventArgs e)
     {
-        if (_updatingText || _editing is null)
+        if (_updatingText || _editing is null || _editing.Text == TextEditor.Text)
             return;
         _editing.Text = TextEditor.Text;
         RenderText();
@@ -408,7 +451,7 @@ public sealed partial class EditorPage : Page
         }
         catch (Exception ex)
         {
-            ShowError($"Not saved. Your note is kept in this popup; try Save again: {ex.Message}", ex);
+            ShowError($"Not saved. Your note stays open here; try Save again: {ex.Message}", ex);
             return false;
         }
         finally
@@ -423,18 +466,19 @@ public sealed partial class EditorPage : Page
             await Task.Delay(50);
         long revision = _revision;
         bool needsAnalysis = _analyzedRevision != revision || !string.IsNullOrEmpty(_note.IndexError);
+        Size content = ContentSize();
         Note snapshot = new()
         {
             Id = _note.Id,
-            Title = string.IsNullOrWhiteSpace(NoteTitle.Text) ? "Untitled note" : NoteTitle.Text.Trim(),
+            Title = SavedTitle,
             Updated = DateTimeOffset.Now,
             Texts = _texts.Where(t => !string.IsNullOrWhiteSpace(t.Text))
                 .Select(t => new TextNote { Id = t.Id, Text = t.Text, X = t.X, Y = t.Y }).ToList(),
             RecognizedText = needsAnalysis ? "" : _note.RecognizedText,
             HandwritingKeywords = needsAnalysis ? "" : _note.HandwritingKeywords,
             IndexError = _note.IndexError,
-            CanvasWidth = Surface.Width,
-            CanvasHeight = Surface.Height,
+            CanvasWidth = content.Width,
+            CanvasHeight = content.Height,
             StrokeCount = Ink.InkPresenter.StrokeContainer.GetStrokes().Count
         };
         // Freeze only the short ISF snapshot, not the slower recognition operation.
@@ -462,6 +506,11 @@ public sealed partial class EditorPage : Page
             snapshot.IndexError = "Handwriting analysis is pending. Tap Analyze ink to retry.";
         await App.Current.Notes.SaveAsync(snapshot);
         _savedRevision = revision;
+        if (_isDraft)
+        {
+            _isDraft = false;
+            Written?.Invoke(this, EventArgs.Empty);
+        }
         _note.InkBase64 = snapshot.InkBase64;
         _note.Title = snapshot.Title;
         _note.IndexError = snapshot.IndexError;
@@ -574,6 +623,12 @@ public sealed partial class EditorPage : Page
 
     public async Task<bool> PrepareToCloseAsync()
     {
+        // An untouched blank page is never written, so empty notes don't pile up.
+        if (IsBlankPage)
+        {
+            _autosave.Stop();
+            return true;
+        }
         await _loadComplete.Task;
         _closing = true;
         _autosave.Stop();
@@ -588,11 +643,15 @@ public sealed partial class EditorPage : Page
         Ink.InkPresenter.IsInputEnabled = false;
         try
         {
-            do
+            // Let an in-flight save or analysis finish, then write only what changed,
+            // so merely viewing a note does not move it to the top of the stack.
+            await _operations.WaitAsync();
+            _operations.Release();
+            while (_loaded && _revision != _savedRevision)
             {
                 if (!await SaveAsync())
                     return false;
-            } while (_loaded && _revision != _savedRevision);
+            }
             return true;
         }
         finally
@@ -650,7 +709,18 @@ public sealed partial class EditorPage : Page
         e.Handled = true;
         await SaveAsync();
     }
+    public void SetStack(string position, bool canOlder, bool canNewer)
+    {
+        StackPosition.Text = position;
+        OlderButton.IsEnabled = canOlder;
+        NewerButton.IsEnabled = canNewer;
+    }
+
     private void Library_Click(object sender, RoutedEventArgs e) => App.Current.ShowLibrary();
+    private async void Older_Click(object sender, RoutedEventArgs e) => await App.Current.FlipAsync(older: true);
+    private async void Newer_Click(object sender, RoutedEventArgs e) => await App.Current.FlipAsync(older: false);
+    private async void NewPage_Click(object sender, RoutedEventArgs e) => await App.Current.CreateNoteAsync();
+    private async void TearOff_Click(object sender, RoutedEventArgs e) => await App.Current.TearOffAsync();
 
     private async void Delete_Click(object sender, RoutedEventArgs e)
     {
@@ -695,7 +765,8 @@ public sealed partial class EditorPage : Page
             case VirtualKey.Right: MoveSelection(10, 0); break;
             case VirtualKey.Up: MoveSelection(0, -10); break;
             case VirtualKey.Down: MoveSelection(0, 10); break;
-            case VirtualKey.Escape: ClearSelection(); break;
+            // With nothing selected, Escape falls through to the popup and puts it down.
+            case VirtualKey.Escape when _selectedText is not null || _selectedInk.Count > 0: ClearSelection(); break;
             default: return;
         }
         e.Handled = true;

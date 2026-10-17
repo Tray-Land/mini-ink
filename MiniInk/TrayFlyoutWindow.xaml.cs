@@ -19,6 +19,7 @@ public sealed partial class TrayFlyoutWindow : WindowEx
     private readonly MainPage _page = new();
     private EditorPage? _editor;
     private Guid? _editorId;
+    private readonly NoteStack _stack = new();
     private readonly SemaphoreSlim _navigation = new(1, 1);
     private bool _restored;
     private readonly ShellBackdrop _backdrop = new();
@@ -81,9 +82,11 @@ public sealed partial class TrayFlyoutWindow : WindowEx
         if (_visible)
             HidePopup();
         else if (DateTime.UtcNow - _lastDismiss > TimeSpan.FromMilliseconds(300))
-            ShowPopup();
+            Summon();
     }
-    public void ShowPopup()
+    // Opening from the tray: a blank page after a while away, otherwise whatever was in use.
+    public void Summon() => ShowPopup(fresh: !_visible && App.Current.FreshPageDue);
+    public void ShowPopup(bool fresh = false)
     {
         if (_closed)
             return;
@@ -98,7 +101,7 @@ public sealed partial class TrayFlyoutWindow : WindowEx
         this.Show();
         Activate();
         PInvoke.SetForegroundWindow(_hwnd);
-        RestorePage();
+        RestorePage(fresh);
     }
     public void HidePopup()
     {
@@ -107,6 +110,7 @@ public sealed partial class TrayFlyoutWindow : WindowEx
             return;
         _visible = false;
         _lastDismiss = DateTime.UtcNow;
+        App.Current.LastUsed = DateTimeOffset.UtcNow;
         _page.OnHidden();
         if (_editor is not null)
             SaveOnDismiss();
@@ -125,18 +129,31 @@ public sealed partial class TrayFlyoutWindow : WindowEx
         if (_editor is not null)
             await _editor.SuspendAsync();
     }
-    private async void RestorePage()
+    private async void RestorePage(bool fresh)
     {
         try
         {
-            if (!_restored)
+            await App.Current.Notes.LoadAsync();
+            _stack.Reset(App.Current.Notes.All, App.Current.DesktopNoteIds);
+            if (fresh)
             {
                 _restored = true;
-                await App.Current.Notes.LoadAsync();
-                Note? active = App.Current.Notes.All.FirstOrDefault(n => n.Id == App.Current.ActiveNoteId);
+                if (_editor is not { IsBlankPage: true })
+                    await OpenNoteAsync(new Note(), show: false, draft: true);
+            }
+            else if (!_restored)
+            {
+                _restored = true;
+                // No active note means the library was showing. A note that was never
+                // written, or now lives on the desktop, gives way to a blank page.
+                Guid? id = App.Current.ActiveNoteId;
+                Note? active = id is Guid value && !App.Current.IsOnDesktop(value) ? App.Current.Notes.Find(value) : null;
                 if (active is not null)
                     await OpenNoteAsync(active, show: false);
+                else if (id is not null)
+                    await OpenNoteAsync(new Note(), show: false, draft: true);
             }
+            UpdateStack();
             if (_visible)
             {
                 if (_editor is null)
@@ -151,7 +168,7 @@ public sealed partial class TrayFlyoutWindow : WindowEx
             _page.ShowError($"Could not restore the note: {ex.Message}");
         }
     }
-    public async Task OpenNoteAsync(Note note, bool show = true)
+    public async Task OpenNoteAsync(Note note, bool show = true, bool draft = false)
     {
         await _navigation.WaitAsync();
         try
@@ -160,14 +177,9 @@ public sealed partial class TrayFlyoutWindow : WindowEx
                 return;
             if (_editorId != note.Id)
             {
-                if (_editor is not null && !await _editor.PrepareToCloseAsync())
+                if (!await LeaveEditorAsync())
                     return;
-                _editor?.Detach();
-                _page.OnHidden();
-                _editor = new EditorPage(note);
-                _editorId = note.Id;
-                PageHost.Content = _editor;
-                App.Current.ActiveNoteId = note.Id;
+                ShowEditor(note, draft);
             }
             if (show)
                 ShowPopup();
@@ -177,12 +189,108 @@ public sealed partial class TrayFlyoutWindow : WindowEx
             _navigation.Release();
         }
     }
+    public async Task NewPageAsync()
+    {
+        await _navigation.WaitAsync();
+        try
+        {
+            if (_closed)
+                return;
+            if (_editor is not { IsBlankPage: true })
+            {
+                if (!await LeaveEditorAsync())
+                    return;
+                ShowEditor(new Note(), draft: true);
+            }
+            ShowPopup();
+        }
+        finally
+        {
+            _navigation.Release();
+        }
+    }
+    public async Task FlipAsync(bool older)
+    {
+        await _navigation.WaitAsync();
+        try
+        {
+            if (_closed || _editor is null || !await LeaveEditorAsync())
+                return;
+            await App.Current.Notes.LoadAsync();
+            _stack.Retain(id => App.Current.Notes.Find(id) is not null && !App.Current.IsOnDesktop(id));
+            Guid current = _editor.NoteId;
+            if (older ? _stack.CanGoOlder(current) : _stack.CanGoNewer(current))
+            {
+                Guid? target = older ? _stack.Older(current) : _stack.Newer(current);
+                Note? next = target is Guid id ? App.Current.Notes.Find(id) : null;
+                ShowEditor(next ?? new Note(), draft: next is null);
+            }
+            else
+                UpdateStack();
+        }
+        finally
+        {
+            _navigation.Release();
+        }
+    }
+    // Lifts the open note off the pad into its own window, leaving a blank page behind.
+    public async Task TearOffAsync()
+    {
+        await _navigation.WaitAsync();
+        try
+        {
+            if (_closed || _editor is null || !await _editor.PrepareToCloseAsync())
+                return;
+            // A blank page leaves as a blank sticky; it is written once something is on it.
+            bool draft = _editor.IsDraft;
+            Note? note = draft ? new Note() : App.Current.Notes.Find(_editor.NoteId);
+            if (note is null)
+                return;
+            RectInt32 bounds = new(_baseX, _baseY, AppWindow.Size.Width, AppWindow.Size.Height);
+            _stack.Retain(id => id != note.Id);
+            ShowEditor(new Note(), draft: true);
+            HidePopup();
+            App.Current.OpenSticky(note, bounds, draft: draft);
+        }
+        finally
+        {
+            _navigation.Release();
+        }
+    }
+    // Saves the open note; false keeps it open after a failed save.
+    private async Task<bool> LeaveEditorAsync() => _editor is null || await _editor.PrepareToCloseAsync();
+    // A blank page that gets written on joins the top of the pile.
+    private void Editor_Written(object? sender, EventArgs e)
+    {
+        if (sender != _editor || _editor is null)
+            return;
+        _stack.Remember(_editor.NoteId);
+        UpdateStack();
+    }
+    private void ShowEditor(Note note, bool draft)
+    {
+        if (_editor is not null)
+        {
+            _editor.Written -= Editor_Written;
+            _editor.Detach();
+        }
+        _page.OnHidden();
+        _editor = new EditorPage(note, draft);
+        _editor.Written += Editor_Written;
+        _editorId = note.Id;
+        _restored = true;
+        PageHost.Content = _editor;
+        App.Current.ActiveNoteId = note.Id;
+        UpdateStack();
+    }
+    private void UpdateStack() =>
+        _editor?.SetStack(_stack.Describe(_editorId), _stack.CanGoOlder(_editorId), _stack.CanGoNewer(_editorId));
     public async Task ShowLibraryAsync()
     {
         await _navigation.WaitAsync();
         try
         {
-            if (_editor is not null && !await _editor.PrepareToCloseAsync())
+            if (!await LeaveEditorAsync())
                 return;
             _editor?.Detach();
             _editor = null;
@@ -284,7 +392,9 @@ public sealed partial class TrayFlyoutWindow : WindowEx
         Span<char> buffer = stackalloc char[64];
         int length = PInvoke.GetClassName(foreground, buffer);
         ReadOnlySpan<char> name = buffer[..Math.Max(0, length)];
-        if (name.SequenceEqual("Xaml_WindowedPopupClass") || name.SequenceEqual("#32768"))
+        // XAML popups (ComboBox lists, flyouts) are separate windows owned by this one.
+        if (name.SequenceEqual("Xaml_WindowedPopupClass") || name.SequenceEqual("#32768") ||
+            PInvoke.GetAncestor(foreground, GET_ANCESTOR_FLAGS.GA_ROOTOWNER) == _hwnd)
         {
             _dismiss.Start();
             return;

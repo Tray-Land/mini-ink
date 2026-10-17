@@ -8,5 +8,7 @@
   <ItemGroup>
     <Compile Include="..\MiniInk\Note.cs" Link="Note.cs"/>
     <Compile Include="..\MiniInk\NoteStore.cs" Link="NoteStore.cs"/>
+    <Compile Include="..\MiniInk\NoteStack.cs" Link="NoteStack.cs"/>
+    <Compile Include="..\MiniInk\StickyLayout.cs" Link="StickyLayout.cs"/>
   </ItemGroup>
 </Project>

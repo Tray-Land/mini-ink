@@ -8,6 +8,8 @@ public sealed partial class MainPage : Page
     public MainPage()
     {
         InitializeComponent();
+        FreshAfter.ItemsSource = FreshPagePolicy.Choices.Select(FreshPagePolicy.Label).ToArray();
+        FreshAfter.SelectedIndex = FreshPagePolicy.Choices.ToList().IndexOf(App.Current.FreshAfterMinutes);
     }
 
     public async void OnShown()
@@ -42,7 +44,8 @@ public sealed partial class MainPage : Page
     private void Notes_Changed(object? sender, EventArgs e) => Refresh();
     private void Refresh()
     {
-        Note[] matches = App.Current.Notes.All.Where(n => n.Matches(Search.Text ?? "")).ToArray();
+        LibraryItem[] matches = App.Current.Notes.All.Where(n => n.Matches(Search.Text ?? ""))
+            .Select(n => new LibraryItem(n, App.Current.IsOnDesktop(n.Id))).ToArray();
         NotesList.ItemsSource = matches;
         Empty.Visibility = matches.Length == 0 ? Visibility.Visible : Visibility.Collapsed;
         Empty.Text = string.IsNullOrWhiteSpace(Search.Text) ? "No notes yet. Capture your first idea." : "No matching notes.";
@@ -54,5 +57,18 @@ public sealed partial class MainPage : Page
     }
     private async void NewNote_Click(object sender, RoutedEventArgs e) => await App.Current.CreateNoteAsync();
     private void Search_TextChanged(AutoSuggestBox sender, AutoSuggestBoxTextChangedEventArgs args) => Refresh();
-    private async void NotesList_ItemClick(object sender, ItemClickEventArgs e) => await App.Current.OpenNoteAsync((Note)e.ClickedItem);
+    private async void NotesList_ItemClick(object sender, ItemClickEventArgs e) => await App.Current.OpenNoteAsync(((LibraryItem)e.ClickedItem).Note);
+    private void FreshAfter_SelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (FreshAfter.SelectedIndex >= 0)
+            App.Current.FreshAfterMinutes = FreshPagePolicy.Choices[FreshAfter.SelectedIndex];
+    }
+}
+
+public sealed record LibraryItem(Note Note, bool OnDesktop)
+{
+    public string Title => Note.Title;
+    public string Preview => Note.Preview;
+    public string DateLabel => OnDesktop ? $"{Note.DateLabel} - on your desktop" : Note.DateLabel;
+    public override string ToString() => Note.Title;
 }

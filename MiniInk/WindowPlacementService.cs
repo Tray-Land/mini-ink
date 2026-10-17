@@ -44,7 +44,10 @@ internal static class WindowPlacementService
             Debug.WriteLine("MiniInk: tray anchor handle unavailable; using cursor/work-area placement.");
     }
 
-    public static void PositionNearTray(Window window, int width, int height)
+    public static void PositionNearTray(Window window, int width, int height) =>
+        window.AppWindow.MoveAndResize(NearTray(width, height));
+
+    public static RectInt32 NearTray(int width, int height)
     {
         NOTIFYICONIDENTIFIER icon = new()
         {
@@ -84,6 +87,15 @@ internal static class WindowPlacementService
         }
         x = Math.Clamp(x, work.X + margin, Math.Max(work.X + margin, work.X + work.Width - w - margin));
         y = Math.Clamp(y, work.Y + margin, Math.Max(work.Y + margin, work.Y + work.Height - h - margin));
-        window.AppWindow.MoveAndResize(new RectInt32(x, y, w, h));
+        return new RectInt32(x, y, w, h);
+    }
+
+    // Pulls a window back into the work area of the display it is mostly on.
+    public static RectInt32 FitOnScreen(RectInt32 bounds)
+    {
+        RectInt32 work = DisplayArea.GetFromRect(bounds, DisplayAreaFallback.Nearest).WorkArea;
+        StickyPlacement fit = new StickyPlacement { X = bounds.X, Y = bounds.Y, Width = bounds.Width, Height = bounds.Height }
+            .FitWithin(work.X, work.Y, work.Width, work.Height);
+        return new RectInt32(fit.X, fit.Y, fit.Width, fit.Height);
     }
 }

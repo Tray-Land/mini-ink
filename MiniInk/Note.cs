@@ -4,9 +4,10 @@ namespace MiniInk;
 
 public sealed class Note
 {
+    public const string Untitled = "Untitled note";
     public int FormatVersion { get; set; } = 1;
     public Guid Id { get; set; } = Guid.NewGuid();
-    public string Title { get; set; } = "Untitled note";
+    public string Title { get; set; } = Untitled;
     public DateTimeOffset Updated { get; set; } = DateTimeOffset.Now;
     public List<TextNote> Texts { get; set; } = [];
     public string InkBase64 { get; set; } = "";
