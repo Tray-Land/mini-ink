@@ -1,0 +1,10 @@
+{
+  "profiles": {
+    "MiniInk (Package)": {
+      "commandName": "MsixPackage"
+    },
+    "MiniInk (Unpackaged)": {
+      "commandName": "Project"
+    }
+  }
+}
