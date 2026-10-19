@@ -10,33 +10,98 @@
             <RowDefinition Height="Auto"/>
             <RowDefinition Height="*"/>
             <RowDefinition Height="Auto"/>
-            <RowDefinition Height="Auto"/>
         </Grid.RowDefinitions>
         <Grid ColumnSpacing="12">
             <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
             <TextBlock Text="Your quick notes" Style="{ThemeResource TitleTextBlockStyle}" VerticalAlignment="Center" TextWrapping="Wrap"/>
-            <Button Grid.Column="1" Content="New note" Click="NewNote_Click"
-                    AutomationProperties.AutomationId="NewNote" Style="{ThemeResource AccentButtonStyle}"/>
+            <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="4">
+                <Button Click="Settings_Click" Style="{StaticResource SubtleButtonStyle}" Width="34" Height="32" Padding="0"
+                        VerticalAlignment="Center" AutomationProperties.AutomationId="OpenSettings"
+                        AutomationProperties.Name="Settings" ToolTipService.ToolTip="Settings">
+                    <FontIcon Glyph="&#xE713;" FontSize="16"/>
+                </Button>
+                <!-- The button starts a blank page; its arrow starts one from a template. -->
+                <SplitButton x:Name="NewNoteButton" Content="New note" Click="NewNote_Click"
+                             AutomationProperties.AutomationId="NewNote" ToolTipService.ToolTip="New note (Ctrl+N), or pick a template">
+                    <SplitButton.KeyboardAccelerators>
+                        <KeyboardAccelerator Key="N" Modifiers="Control" Invoked="NewNote_Invoked"/>
+                    </SplitButton.KeyboardAccelerators>
+                    <!-- WinUI has no accent split button, so it borrows the accent button's colors for each theme. -->
+                    <SplitButton.Resources>
+                        <ResourceDictionary>
+                            <ResourceDictionary.ThemeDictionaries>
+                                <ResourceDictionary x:Key="Default">
+                                    <StaticResource x:Key="SplitButtonBackground" ResourceKey="AccentFillColorDefaultBrush"/>
+                                    <StaticResource x:Key="SplitButtonBackgroundPointerOver" ResourceKey="AccentFillColorSecondaryBrush"/>
+                                    <StaticResource x:Key="SplitButtonBackgroundPressed" ResourceKey="AccentFillColorTertiaryBrush"/>
+                                    <StaticResource x:Key="SplitButtonForeground" ResourceKey="TextOnAccentFillColorPrimaryBrush"/>
+                                    <StaticResource x:Key="SplitButtonForegroundPointerOver" ResourceKey="TextOnAccentFillColorPrimaryBrush"/>
+                                    <StaticResource x:Key="SplitButtonForegroundPressed" ResourceKey="TextOnAccentFillColorSecondaryBrush"/>
+                                    <StaticResource x:Key="SplitButtonForegroundSecondary" ResourceKey="TextOnAccentFillColorPrimaryBrush"/>
+                                    <StaticResource x:Key="SplitButtonForegroundSecondaryPressed" ResourceKey="TextOnAccentFillColorSecondaryBrush"/>
+                                    <StaticResource x:Key="SplitButtonBorderBrush" ResourceKey="AccentControlElevationBorderBrush"/>
+                                    <StaticResource x:Key="SplitButtonBorderBrushPointerOver" ResourceKey="AccentControlElevationBorderBrush"/>
+                                    <StaticResource x:Key="SplitButtonBorderBrushPressed" ResourceKey="ControlFillColorTransparentBrush"/>
+                                    <StaticResource x:Key="SplitButtonBorderBrushDivider" ResourceKey="ControlStrokeColorOnAccentSecondaryBrush"/>
+                                </ResourceDictionary>
+                                <ResourceDictionary x:Key="Light">
+                                    <StaticResource x:Key="SplitButtonBackground" ResourceKey="AccentFillColorDefaultBrush"/>
+                                    <StaticResource x:Key="SplitButtonBackgroundPointerOver" ResourceKey="AccentFillColorSecondaryBrush"/>
+                                    <StaticResource x:Key="SplitButtonBackgroundPressed" ResourceKey="AccentFillColorTertiaryBrush"/>
+                                    <StaticResource x:Key="SplitButtonForeground" ResourceKey="TextOnAccentFillColorPrimaryBrush"/>
+                                    <StaticResource x:Key="SplitButtonForegroundPointerOver" ResourceKey="TextOnAccentFillColorPrimaryBrush"/>
+                                    <StaticResource x:Key="SplitButtonForegroundPressed" ResourceKey="TextOnAccentFillColorSecondaryBrush"/>
+                                    <StaticResource x:Key="SplitButtonForegroundSecondary" ResourceKey="TextOnAccentFillColorPrimaryBrush"/>
+                                    <StaticResource x:Key="SplitButtonForegroundSecondaryPressed" ResourceKey="TextOnAccentFillColorSecondaryBrush"/>
+                                    <StaticResource x:Key="SplitButtonBorderBrush" ResourceKey="AccentControlElevationBorderBrush"/>
+                                    <StaticResource x:Key="SplitButtonBorderBrushPointerOver" ResourceKey="AccentControlElevationBorderBrush"/>
+                                    <StaticResource x:Key="SplitButtonBorderBrushPressed" ResourceKey="ControlFillColorTransparentBrush"/>
+                                    <StaticResource x:Key="SplitButtonBorderBrushDivider" ResourceKey="ControlStrokeColorOnAccentSecondaryBrush"/>
+                                </ResourceDictionary>
+                            </ResourceDictionary.ThemeDictionaries>
+                        </ResourceDictionary>
+                    </SplitButton.Resources>
+                </SplitButton>
+            </StackPanel>
         </Grid>
-        <AutoSuggestBox x:Name="Search" Grid.Row="1" Header="Search notes and handwriting"
+        <AutoSuggestBox x:Name="Search" Grid.Row="1" Header="Search titles, text, and dates"
                         PlaceholderText="Find a thought..." QueryIcon="Find" TextChanged="Search_TextChanged"
                         AutomationProperties.AutomationId="SearchNotes"/>
         <InfoBar x:Name="Error" Grid.Row="2" Severity="Error" IsClosable="True"/>
         <Grid Grid.Row="3">
-            <ListView x:Name="NotesList" IsItemClickEnabled="True" ItemClick="NotesList_ItemClick"
+            <ListView x:Name="NotesList" IsItemClickEnabled="True" ItemClick="NotesList_ItemClick" KeyDown="NotesList_KeyDown"
                       SelectionMode="None" AutomationProperties.AutomationId="NotesList">
                 <ListView.ItemTemplate>
                     <DataTemplate x:DataType="local:LibraryItem">
-                        <Grid Padding="0,8" RowSpacing="4">
+                        <Grid Padding="0,8" RowSpacing="4" ColumnSpacing="12">
                             <Grid.RowDefinitions>
                                 <RowDefinition Height="Auto"/>
                                 <RowDefinition Height="Auto"/>
                                 <RowDefinition Height="Auto"/>
                             </Grid.RowDefinitions>
-                            <TextBlock Text="{x:Bind Title, Mode=OneTime}" FontWeight="SemiBold"/>
-                            <TextBlock Grid.Row="1" Text="{x:Bind Preview, Mode=OneTime}" TextTrimming="CharacterEllipsis"
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="Auto"/>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="Auto"/>
+                            </Grid.ColumnDefinitions>
+                            <!-- The ink in miniature, sized to InkThumbnail's 64 by 48 drawing. -->
+                            <Border Grid.RowSpan="3" Width="72" Height="56" Padding="3" CornerRadius="4" BorderThickness="1"
+                                    VerticalAlignment="Center" Background="{ThemeResource LayerFillColorDefaultBrush}"
+                                    BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}">
+                                <Path Data="{x:Bind Sketch, Mode=OneTime}" Width="64" Height="48" StrokeThickness="1.25"
+                                      Stroke="{ThemeResource TextFillColorPrimaryBrush}" StrokeLineJoin="Round"
+                                      StrokeStartLineCap="Round" StrokeEndLineCap="Round"/>
+                            </Border>
+                            <TextBlock Grid.Column="1" Text="{x:Bind Title, Mode=OneTime}" FontWeight="SemiBold"/>
+                            <TextBlock Grid.Column="1" Grid.Row="1" Text="{x:Bind Preview, Mode=OneTime}" TextTrimming="CharacterEllipsis"
                                        MaxLines="2" TextWrapping="Wrap" Foreground="{ThemeResource TextFillColorSecondaryBrush}"/>
-                            <TextBlock Grid.Row="2" Text="{x:Bind DateLabel, Mode=OneTime}" Style="{ThemeResource CaptionTextBlockStyle}"/>
+                            <TextBlock Grid.Column="1" Grid.Row="2" Text="{x:Bind DateLabel, Mode=OneTime}" Style="{ThemeResource CaptionTextBlockStyle}"/>
+                            <Button Grid.Column="2" Grid.RowSpan="3" Click="Delete_Click" Style="{StaticResource SubtleButtonStyle}"
+                                    Width="34" Height="32" Padding="0" VerticalAlignment="Center"
+                                    AutomationProperties.AutomationId="DeleteNote" AutomationProperties.Name="Delete note"
+                                    ToolTipService.ToolTip="Delete note (Delete)">
+                                <FontIcon Glyph="&#xE74D;" FontSize="14" Foreground="{ThemeResource TextFillColorSecondaryBrush}"/>
+                            </Button>
                         </Grid>
                     </DataTemplate>
                 </ListView.ItemTemplate>
@@ -44,14 +109,7 @@
             <TextBlock x:Name="Empty" Text="No notes yet. Capture your first idea."
                        HorizontalAlignment="Center" VerticalAlignment="Center" TextWrapping="Wrap"/>
         </Grid>
-        <Grid Grid.Row="4" ColumnSpacing="12">
-            <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
-            <TextBlock Text="Open to a fresh page" VerticalAlignment="Center" TextWrapping="Wrap"/>
-            <ComboBox x:Name="FreshAfter" Grid.Column="1" MinWidth="160" SelectionChanged="FreshAfter_SelectionChanged"
-                      AutomationProperties.Name="Open to a fresh page" AutomationProperties.AutomationId="FreshAfter"
-                      ToolTipService.ToolTip="How long MiniInk must be put down before it opens on a blank page instead of the last note"/>
-        </Grid>
-        <TextBlock Grid.Row="5" Text="Stored on this device. Handwriting is indexed automatically."
+        <TextBlock Grid.Row="4" Text="Stored on this device."
                    Style="{ThemeResource CaptionTextBlockStyle}" TextWrapping="Wrap"
                    Foreground="{ThemeResource TextFillColorSecondaryBrush}"/>
     </Grid>

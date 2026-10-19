@@ -1,17 +1,18 @@
 using System.Diagnostics;
-using System.Runtime.InteropServices;
+using System.Globalization;
 using Microsoft.UI;
 using Microsoft.UI.Input;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Automation;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Input;
+using Microsoft.UI.Xaml.Media;
+using Microsoft.UI.Xaml.Shapes;
 using Windows.Foundation;
 using Windows.Storage.Streams;
 using Windows.System;
 using Windows.UI.Core;
 using Windows.UI.Input.Inking;
-using Windows.UI.Input.Inking.Analysis;
 
 namespace MiniInk;
 
@@ -21,13 +22,13 @@ public sealed partial class EditorPage : Page
     private readonly List<TextNote> _texts;
     private readonly SemaphoreSlim _operations = new(1, 1);
     private readonly DispatcherTimer _autosave = new() { Interval = TimeSpan.FromSeconds(1.2) };
-    private List<InkGroup> _groups = [];
     private HashSet<uint> _selectedInk = [];
     private TextNote? _selectedText;
     private TextNote? _editing;
     private long _revision;
     private long _savedRevision;
-    private long _analyzedRevision = -1;
+    // Drawn again only once the ink has changed.
+    private string? _thumbnail;
     private bool _loaded;
     private bool _loadFailed;
     private bool _updatingText;
@@ -37,22 +38,29 @@ public sealed partial class EditorPage : Page
     private bool _suspended;
     private bool _isDraft;
     private string _titleText;
+    private readonly string _draftTitle;
     private readonly TaskCompletionSource _loadComplete = new();
     private bool _pointerDown;
     private bool _dragging;
     private Point _pressed;
     private Point _last;
     private uint _pointerId;
-    private PointerDeviceType _pointerType;
-    private sealed record InkGroup(Rect Bounds, HashSet<uint> StrokeIds);
+    private InputTool _pointerTool;
+    private bool _reselected;
+    private InputTool _mouseTool;
+    private InputTool _touchTool;
+    private InkToolbar? _penTools;
+    private ElementTheme? _inkTheme;
 
     public Guid NoteId => _note.Id;
     // A blank page that has not been written to disk yet.
     public bool IsDraft => _isDraft;
-    public bool IsBlankPage => _isDraft && string.IsNullOrWhiteSpace(NoteTitle.Text) &&
+    public NoteTemplate NoteTemplate => _note.Template;
+    public TemplateOptions? TemplateOptions => _note.Options;
+    // Nothing written yet; a template's lines and suggested title don't count.
+    public bool IsBlankPage => _isDraft && NoteTitle.Text.Trim() == _draftTitle &&
         _texts.All(t => string.IsNullOrWhiteSpace(t.Text)) && Ink.InkPresenter.StrokeContainer.GetStrokes().Count == 0;
     public string SavedTitle => string.IsNullOrWhiteSpace(NoteTitle.Text) ? Note.Untitled : NoteTitle.Text.Trim();
-    public event EventHandler? TitleChanged;
     // Raised when a blank page is first written to disk.
     public event EventHandler? Written;
 
@@ -63,23 +71,21 @@ public sealed partial class EditorPage : Page
         _texts = note.Texts.Select(t => new TextNote { Id = t.Id, Text = t.Text, X = t.X, Y = t.Y }).ToList();
         InitializeComponent();
         _titleText = note.Title == Note.Untitled ? "" : note.Title;
+        _draftTitle = _titleText.Trim();
         NoteTitle.Text = _titleText;
+        ApplyInputTools();
+        // A sticky note is just the page; its window carries a smaller set of pen tools.
         if (sticky)
-            LibraryButton.Visibility = StackActions.Visibility = Hint.Visibility = StackPosition.Visibility = Visibility.Collapsed;
-        Ink.InkPresenter.InputDeviceTypes = CoreInputDeviceTypes.Pen;
-        Ink.InkPresenter.UpdateDefaultDrawingAttributes(new InkDrawingAttributes
         {
-            Color = Colors.DodgerBlue,
-            Size = new Size(3, 3),
-            IgnorePressure = false
-        });
-        PenTools.Loaded += (_, _) =>
+            Layout.Padding = new Thickness(0);
+            Layout.RowSpacing = 0;
+            Header.Visibility = Commands.Visibility = Visibility.Collapsed;
+        }
+        else
         {
-            Ink.InkPresenter.InputDeviceTypes = CoreInputDeviceTypes.Pen;
-            InkDrawingAttributes attributes = Ink.InkPresenter.CopyDefaultDrawingAttributes();
-            attributes.Color = Colors.DodgerBlue;
-            Ink.InkPresenter.UpdateDefaultDrawingAttributes(attributes);
-        };
+            UsePenTools(PenTools);
+            NewPageButton.Flyout = TemplateMenu.Create();
+        }
         Ink.InkPresenter.StrokesCollected += (_, _) => InkChanged();
         Ink.InkPresenter.StrokesErased += (_, _) => InkChanged();
         Ink.InkPresenter.StrokeInput.StrokeStarted += (_, _) => _inking = true;
@@ -90,6 +96,7 @@ public sealed partial class EditorPage : Page
         Surface.AddHandler(PointerReleasedEvent, new PointerEventHandler(Surface_PointerReleased), true);
         Surface.PointerCanceled += Surface_PointerCanceled;
         Surface.PointerCaptureLost += Surface_PointerCanceled;
+        Surface.SizeChanged += (_, _) => RenderTemplate();
         TextEditor.PointerEntered += (_, e) =>
         {
             if (e.Pointer.PointerDeviceType == PointerDeviceType.Pen)
@@ -98,7 +105,89 @@ public sealed partial class EditorPage : Page
         KeyDown += Editor_KeyDown;
         _autosave.Tick += Autosave_Tick;
         Loaded += Editor_Loaded;
+        // A tool chosen in any window applies here while the page is shown.
+        Loaded += (_, _) =>
+        {
+            App.Current.InputToolsChanged -= InputTools_Changed;
+            App.Current.InputToolsChanged += InputTools_Changed;
+            ApplyInputTools();
+        };
+        Unloaded += (_, _) => App.Current.InputToolsChanged -= InputTools_Changed;
+        ActualThemeChanged += (_, _) =>
+        {
+            UseThemeInk();
+            SyncInk();
+            RenderTemplate();
+        };
     }
+
+    public void UsePenTools(InkToolbar tools)
+    {
+        _penTools = tools;
+        tools.TargetInkCanvas = Ink;
+        // The canvas draws with exactly what the toolbar shows.
+        tools.InkDrawingAttributesChanged += (_, _) => SyncInk();
+        tools.Loaded += (_, _) =>
+        {
+            ApplyInputTools();
+            UseThemeInk();
+            SyncInk();
+        };
+    }
+
+    private void SyncInk()
+    {
+        if (_penTools?.InkDrawingAttributes is InkDrawingAttributes attributes)
+            Ink.InkPresenter.UpdateDefaultDrawingAttributes(attributes);
+    }
+
+    // Pens start in ink that shows on the page: white when it is dark, black when it is light.
+    // When the theme changes, a pen still in the old ink follows it; a color picked by hand stays.
+    private void UseThemeInk()
+    {
+        if (_penTools is null)
+            return;
+        Windows.UI.Color? previous = _inkTheme is ElementTheme theme ? ThemeInk(theme) : null;
+        Windows.UI.Color ink = ThemeInk(ActualTheme);
+        _inkTheme = ActualTheme;
+        foreach (InkToolbarTool tool in (InkToolbarTool[])[InkToolbarTool.BallpointPen, InkToolbarTool.Pencil])
+        {
+            if (_penTools.GetToolButton(tool) is not InkToolbarPenButton pen ||
+                previous is Windows.UI.Color old && (pen.SelectedBrush as SolidColorBrush)?.Color != old)
+                continue;
+            int index = pen.Palette.ToList().FindIndex(b => b is SolidColorBrush brush && brush.Color == ink);
+            if (index < 0)
+            {
+                pen.Palette = [new SolidColorBrush(ink), .. pen.Palette];
+                index = 0;
+            }
+            pen.SelectedBrushIndex = index;
+        }
+    }
+
+    private static Windows.UI.Color ThemeInk(ElementTheme theme) => theme == ElementTheme.Dark ? Colors.White : Colors.Black;
+
+    private void InputTools_Changed(object? sender, EventArgs e) => ApplyInputTools();
+
+    // The pen always draws; mouse and touch draw only when Draw is their tool.
+    private void ApplyInputTools()
+    {
+        _mouseTool = App.Current.MouseTool;
+        _touchTool = App.Current.TouchTool;
+        CoreInputDeviceTypes drawing = CoreInputDeviceTypes.Pen;
+        if (_mouseTool == InputTool.Draw)
+            drawing |= CoreInputDeviceTypes.Mouse;
+        if (_touchTool == InputTool.Draw)
+            drawing |= CoreInputDeviceTypes.Touch;
+        Ink.InkPresenter.InputDeviceTypes = drawing;
+    }
+
+    private InputTool ToolFor(PointerDeviceType device) => device switch
+    {
+        PointerDeviceType.Mouse => _mouseTool,
+        PointerDeviceType.Touch => _touchTool,
+        _ => InputTool.Draw
+    };
 
     private async void Editor_Loaded(object sender, RoutedEventArgs e)
     {
@@ -122,9 +211,6 @@ public sealed partial class EditorPage : Page
             RenderText();
             FitSurface();
             _loaded = true;
-            Status.Text = _isDraft ? "Blank page - kept once you write on it" : "Saved on this device";
-            if (!string.IsNullOrEmpty(_note.IndexError))
-                ShowError($"Handwriting index needs a retry: {_note.IndexError}");
         }
         catch (Exception ex)
         {
@@ -146,11 +232,7 @@ public sealed partial class EditorPage : Page
             return;
         _revision++;
         if (inkChanged)
-        {
-            _groups.Clear();
-            _analyzedRevision = -1;
-        }
-        Status.Text = "Unsaved changes";
+            _thumbnail = null;
         _autosave.Stop();
         _autosave.Start();
     }
@@ -170,9 +252,23 @@ public sealed partial class EditorPage : Page
     // The page fills its window, and grows past it only for content placed further out.
     private void FitSurface()
     {
+        FitHours();
         Size content = ContentSize();
         Surface.Width = Math.Max(content.Width, CanvasScroll.ActualWidth);
         Surface.Height = Math.Max(content.Height, CanvasScroll.ActualHeight);
+    }
+
+    // An hour planner's rows fill the window until something is written; then they stay where they are.
+    private void FitHours()
+    {
+        if (_note is not { Template: NoteTemplate.Day, Options: TemplateOptions options } || !IsBlankPage || CanvasScroll.ActualHeight <= 0)
+            return;
+        TemplateOptions fitted = NoteTemplates.FitHours(options, CanvasScroll.ActualHeight);
+        if (fitted == options)
+            return;
+        _note.Options = fitted;
+        _note.CanvasHeight = NoteTemplates.DayHeight(fitted);
+        RenderTemplate();
     }
 
     private Size ContentSize()
@@ -193,7 +289,6 @@ public sealed partial class EditorPage : Page
         if (NoteTitle.Text == _titleText)
             return;
         _titleText = NoteTitle.Text;
-        TitleChanged?.Invoke(this, EventArgs.Empty);
         Changed();
     }
     private void TextEditor_TextChanged(object sender, TextChangedEventArgs e)
@@ -270,6 +365,59 @@ public sealed partial class EditorPage : Page
         }
     }
 
+    // The template's printed lines, in the page's ink color, redrawn as the page grows.
+    private void RenderTemplate()
+    {
+        TemplateLayer.Children.Clear();
+        if (_note.Template == NoteTemplate.None)
+            return;
+        Windows.UI.Color ink = ThemeInk(ActualTheme);
+        SolidColorBrush faint = new(ColorHelper.FromArgb(0x24, ink.R, ink.G, ink.B));
+        SolidColorBrush strong = new(ColorHelper.FromArgb(0x50, ink.R, ink.G, ink.B));
+        SolidColorBrush label = new(ColorHelper.FromArgb(0x99, ink.R, ink.G, ink.B));
+        foreach (TemplateMark mark in NoteTemplates.Layout(_note.Template, Surface.Width, Surface.Height, CultureInfo.CurrentCulture, _note.Options))
+        {
+            switch (mark)
+            {
+                case TemplateLine line:
+                    Line rule = new()
+                    {
+                        X1 = line.X1, Y1 = line.Y1, X2 = line.X2, Y2 = line.Y2,
+                        Stroke = line.Strong ? strong : faint,
+                        StrokeThickness = line.Thickness
+                    };
+                    // A dash of no length with round caps is a dot.
+                    if (line.DotSpacing > 0)
+                    {
+                        rule.StrokeDashArray = new DoubleCollection { 0, line.DotSpacing / line.Thickness };
+                        rule.StrokeDashCap = rule.StrokeStartLineCap = rule.StrokeEndLineCap = PenLineCap.Round;
+                    }
+                    TemplateLayer.Children.Add(rule);
+                    break;
+                case TemplateBox box:
+                    Place(new Rectangle
+                    {
+                        Width = box.Size, Height = box.Size, RadiusX = 3, RadiusY = 3, Stroke = strong, StrokeThickness = 1.5
+                    }, box.X, box.Y);
+                    break;
+                case TemplateLabel text:
+                    Place(new TextBlock
+                    {
+                        Text = text.Text, FontSize = text.Size, Foreground = label,
+                        FontWeight = text.Bold ? Microsoft.UI.Text.FontWeights.SemiBold : Microsoft.UI.Text.FontWeights.Normal
+                    }, text.X, text.Y);
+                    break;
+            }
+        }
+
+        void Place(UIElement element, double x, double y)
+        {
+            Canvas.SetLeft(element, x);
+            Canvas.SetTop(element, y);
+            TemplateLayer.Children.Add(element);
+        }
+    }
+
     private TextNote? HitText(Point point) => _texts.LastOrDefault(t =>
         new Rect(t.X, t.Y, 220, TextHeight(t)).Contains(point));
 
@@ -284,26 +432,29 @@ public sealed partial class EditorPage : Page
     {
         if (!_loaded || _loadFailed || _pointerDown || _closing)
             return;
-        if (e.Pointer.PointerDeviceType == PointerDeviceType.Pen)
-        {
-            FinishEditing();
-            ClearSelection();
-            return;
-        }
+        PointerDeviceType device = e.Pointer.PointerDeviceType;
         var current = e.GetCurrentPoint(Surface);
-        if (e.Pointer.PointerDeviceType == PointerDeviceType.Mouse && !current.Properties.IsLeftButtonPressed)
+        if (device == PointerDeviceType.Mouse && !current.Properties.IsLeftButtonPressed)
             return;
         Point point = current.Position;
-        if (e.Pointer.PointerDeviceType == PointerDeviceType.Mouse && _editing is not null &&
+        // Clicks and taps inside the open text box are for the text.
+        if (device != PointerDeviceType.Pen && _editing is not null &&
             new Rect(_editing.X, _editing.Y, TextEditor.ActualWidth, TextEditor.ActualHeight).Contains(point))
             return;
         FinishEditing();
+        InputTool tool = ToolFor(device);
+        if (tool == InputTool.Draw)
+        {
+            ClearSelection();
+            return;
+        }
         _pointerDown = true;
         _pointerId = e.Pointer.PointerId;
-        _pointerType = e.Pointer.PointerDeviceType;
+        _pointerTool = tool;
         _pressed = _last = point;
         _dragging = false;
         TextNote? text = HitText(point);
+        _reselected = text is not null && text == _selectedText;
         if (text is not null)
         {
             ClearSelection();
@@ -331,7 +482,7 @@ public sealed partial class EditorPage : Page
         e.Handled = true;
     }
 
-    private async void Surface_PointerReleased(object sender, PointerRoutedEventArgs e)
+    private void Surface_PointerReleased(object sender, PointerRoutedEventArgs e)
     {
         if (!_pointerDown || e.Pointer.PointerId != _pointerId)
             return;
@@ -342,20 +493,27 @@ public sealed partial class EditorPage : Page
         e.Handled = true;
         if (dragged)
             return;
+        if (_pointerTool == InputTool.Text)
+        {
+            if (_selectedText is not null)
+                EditText(_selectedText);
+            else
+                AddText(point);
+            return;
+        }
+        // Selecting: a second click or tap on selected text edits it, and ink is picked up by group.
         if (_selectedText is not null)
         {
-            if (_pointerType == PointerDeviceType.Mouse)
+            if (_reselected)
                 EditText(_selectedText);
             return;
         }
-        bool onInk = Ink.InkPresenter.StrokeContainer.GetStrokes()
-            .Any(s => Inflate(s.BoundingRect, 12).Contains(point));
-        if (onInk || _pointerType == PointerDeviceType.Touch)
+        if (InkGroupAt(point) is { Count: > 0 } group)
         {
-            await AnalyzeAndSaveAsync(point);
-            return;
+            ClearSelection();
+            _selectedInk = group;
+            UpdateSelection();
         }
-        AddText(point);
     }
 
     private void Surface_PointerCanceled(object sender, PointerRoutedEventArgs e)
@@ -366,6 +524,31 @@ public sealed partial class EditorPage : Page
 
     private static Rect Inflate(Rect rect, double padding) => new(
         rect.X - padding, rect.Y - padding, rect.Width + padding * 2, rect.Height + padding * 2);
+
+    // Ink is picked up a word or drawing at a time: the stroke at the point, and every stroke
+    // that touches it, or comes within a few pixels of one that does.
+    private HashSet<uint> InkGroupAt(Point point)
+    {
+        (uint Id, Rect Bounds)[] strokes = Ink.InkPresenter.StrokeContainer.GetStrokes().Select(s => (s.Id, s.BoundingRect)).ToArray();
+        (uint Id, Rect Bounds)[] hits = strokes.Where(s => Inflate(s.Bounds, 12).Contains(point)).ToArray();
+        if (hits.Length == 0)
+            return [];
+        (uint Id, Rect Bounds) hit = hits.MinBy(s => s.Bounds.Width * s.Bounds.Height);
+        List<(uint Id, Rect Near)> rest = strokes.Where(s => s.Id != hit.Id).Select(s => (s.Id, Inflate(s.Bounds, 4))).ToList();
+        HashSet<uint> group = [hit.Id];
+        Queue<Rect> reached = new([Inflate(hit.Bounds, 4)]);
+        while (reached.TryDequeue(out Rect near))
+        {
+            foreach ((uint Id, Rect Near) stroke in rest.Where(s => near.X <= s.Near.Right && s.Near.X <= near.Right &&
+                near.Y <= s.Near.Bottom && s.Near.Y <= near.Bottom).ToArray())
+            {
+                group.Add(stroke.Id);
+                reached.Enqueue(stroke.Near);
+                rest.Remove(stroke);
+            }
+        }
+        return group;
+    }
 
     private Rect SelectedBounds()
     {
@@ -447,7 +630,7 @@ public sealed partial class EditorPage : Page
         await _operations.WaitAsync();
         try
         {
-            return await SaveCoreAsync(analyze: true);
+            return await SaveCoreAsync();
         }
         catch (Exception ex)
         {
@@ -460,12 +643,11 @@ public sealed partial class EditorPage : Page
         }
     }
 
-    private async Task<bool> SaveCoreAsync(bool analyze)
+    private async Task<bool> SaveCoreAsync()
     {
         while (_inking || _pointerDown)
             await Task.Delay(50);
         long revision = _revision;
-        bool needsAnalysis = _analyzedRevision != revision || !string.IsNullOrEmpty(_note.IndexError);
         Size content = ContentSize();
         Note snapshot = new()
         {
@@ -474,14 +656,13 @@ public sealed partial class EditorPage : Page
             Updated = DateTimeOffset.Now,
             Texts = _texts.Where(t => !string.IsNullOrWhiteSpace(t.Text))
                 .Select(t => new TextNote { Id = t.Id, Text = t.Text, X = t.X, Y = t.Y }).ToList(),
-            RecognizedText = needsAnalysis ? "" : _note.RecognizedText,
-            HandwritingKeywords = needsAnalysis ? "" : _note.HandwritingKeywords,
-            IndexError = _note.IndexError,
             CanvasWidth = content.Width,
             CanvasHeight = content.Height,
+            Template = _note.Template,
+            Options = _note.Options,
             StrokeCount = Ink.InkPresenter.StrokeContainer.GetStrokes().Count
         };
-        // Freeze only the short ISF snapshot, not the slower recognition operation.
+        // Freeze only for the short ISF snapshot.
         Ink.InkPresenter.IsInputEnabled = false;
         Surface.IsHitTestVisible = false;
         try
@@ -501,9 +682,9 @@ public sealed partial class EditorPage : Page
             Ink.InkPresenter.IsInputEnabled = !_closing;
             Surface.IsHitTestVisible = !_closing;
         }
-        // Ink is durable before recognition, even if handwriting support is unavailable.
-        if (needsAnalysis)
-            snapshot.IndexError = "Handwriting analysis is pending. Tap Analyze ink to retry.";
+        snapshot.Thumbnail = _thumbnail ?? (snapshot.StrokeCount == 0 ? "" : await InkThumbnail.FromInkAsync(snapshot.InkBase64));
+        if (_revision == revision)
+            _thumbnail = snapshot.Thumbnail;
         await App.Current.Notes.SaveAsync(snapshot);
         _savedRevision = revision;
         if (_isDraft)
@@ -513,112 +694,13 @@ public sealed partial class EditorPage : Page
         }
         _note.InkBase64 = snapshot.InkBase64;
         _note.Title = snapshot.Title;
-        _note.IndexError = snapshot.IndexError;
-        if (analyze && _revision == revision && needsAnalysis)
-        {
-            try
-            {
-                Status.Text = "Saved; analyzing handwriting...";
-                InkAnalyzer analyzer = new();
-                var strokes = Ink.InkPresenter.StrokeContainer.GetStrokes();
-                if (strokes.Count > 0)
-                {
-                    analyzer.AddDataForStrokes(strokes);
-                    InkAnalysisResult result = await analyzer.AnalyzeAsync();
-                    if (result.Status != InkAnalysisStatus.Updated)
-                        throw new InvalidOperationException($"Ink analysis returned {result.Status}. Check Windows handwriting language support.");
-                }
-                if (_revision == revision)
-                {
-                    _groups = analyzer.AnalysisRoot.FindNodes(InkAnalysisNodeKind.InkWord)
-                        .Concat(analyzer.AnalysisRoot.FindNodes(InkAnalysisNodeKind.InkDrawing))
-                        .Select(n => new InkGroup(n.BoundingRect, n.GetStrokeIds().ToHashSet())).ToList();
-                    HashSet<uint> grouped = _groups.SelectMany(g => g.StrokeIds).ToHashSet();
-                    _groups.AddRange(strokes.Where(s => !grouped.Contains(s.Id))
-                        .Select(s => new InkGroup(s.BoundingRect, [s.Id])));
-                    InkAnalysisInkWord[] words = analyzer.AnalysisRoot.FindNodes(InkAnalysisNodeKind.InkWord)
-                        .OfType<InkAnalysisInkWord>().ToArray();
-                    snapshot.RecognizedText = string.Join(" ", words.Select(w => w.RecognizedText));
-                    snapshot.HandwritingKeywords = string.Join(" ", words.SelectMany(w => w.TextAlternates).Distinct());
-                    _analyzedRevision = revision;
-                    if (strokes.Count > 0)
-                    {
-                        // Index recognizer alternatives too, without cluttering the note preview.
-                        InkRecognizerContainer recognizer = new();
-                        if (recognizer.GetRecognizers().Count == 0)
-                            throw new InvalidOperationException("Install a handwriting language in Windows Settings to index this ink.");
-                        Windows.UI.Input.Inking.InkStrokeContainer recognitionInk = new();
-                        recognitionInk.AddStrokes(strokes.Select(s => s.Clone()));
-                        var results = await recognizer.RecognizeAsync(recognitionInk, InkRecognitionTarget.All);
-                        if (_revision != revision)
-                            return true;
-                        if (string.IsNullOrWhiteSpace(snapshot.RecognizedText))
-                            snapshot.RecognizedText = string.Join(" ", results.Select(r => r.GetTextCandidates().FirstOrDefault() ?? ""));
-                        snapshot.HandwritingKeywords = string.Join(" ",
-                            new[] { snapshot.HandwritingKeywords, snapshot.RecognizedText }
-                                .Concat(results.SelectMany(r => r.GetTextCandidates())).Distinct());
-                    }
-                    snapshot.IndexError = "";
-                    await App.Current.Notes.SaveAsync(snapshot);
-                    _note.RecognizedText = snapshot.RecognizedText;
-                    _note.HandwritingKeywords = snapshot.HandwritingKeywords;
-                    _note.IndexError = "";
-                    Error.IsOpen = false;
-                }
-            }
-            catch (Exception ex) when (ex is COMException or InvalidOperationException)
-            {
-                snapshot.IndexError = ex.Message;
-                await App.Current.Notes.SaveAsync(snapshot);
-                _note.IndexError = ex.Message;
-                ShowError($"Ink was saved, but handwriting could not be indexed: {ex.Message}", ex);
-            }
-        }
         if (_revision != revision)
         {
-            Status.Text = "Unsaved changes";
             _autosave.Stop();
             if (!_suspended)
                 _autosave.Start();
         }
-        else
-        {
-            Status.Text = string.IsNullOrEmpty(_note.IndexError)
-                ? $"Saved on this device - {Ink.InkPresenter.StrokeContainer.GetStrokes().Count} ink strokes"
-                : "Saved - handwriting search needs a retry";
-        }
         return true;
-    }
-
-    private async Task AnalyzeAndSaveAsync(Point? point = null)
-    {
-        if (!_loaded || _loadFailed)
-            return;
-        await _operations.WaitAsync();
-        try
-        {
-            if (!await SaveCoreAsync(analyze: true))
-                return;
-            if (point is null || _analyzedRevision != _revision)
-                return;
-            ClearSelection();
-            InkGroup? group = _groups.Where(g => Inflate(g.Bounds, 12).Contains(point.Value))
-                .OrderBy(g => g.Bounds.Width * g.Bounds.Height).FirstOrDefault();
-            if (group is not null)
-            {
-                _selectedInk = group.StrokeIds.ToHashSet();
-                UpdateSelection();
-                Status.Text = "Ink group selected - drag with a finger to move it";
-            }
-        }
-        catch (Exception ex)
-        {
-            ShowError($"Could not analyze this note: {ex.Message}", ex);
-        }
-        finally
-        {
-            _operations.Release();
-        }
     }
 
     public async Task<bool> PrepareToCloseAsync()
@@ -643,7 +725,7 @@ public sealed partial class EditorPage : Page
         Ink.InkPresenter.IsInputEnabled = false;
         try
         {
-            // Let an in-flight save or analysis finish, then write only what changed,
+            // Let an in-flight save finish, then write only what changed,
             // so merely viewing a note does not move it to the top of the stack.
             await _operations.WaitAsync();
             _operations.Release();
@@ -687,6 +769,7 @@ public sealed partial class EditorPage : Page
         _detached = true;
         _autosave.Stop();
         _autosave.Tick -= Autosave_Tick;
+        App.Current.InputToolsChanged -= InputTools_Changed;
     }
 
     public void ShowError(string message, Exception? ex = null)
@@ -694,7 +777,6 @@ public sealed partial class EditorPage : Page
         Debug.WriteLine($"MiniInk editor: {message}\n{ex}");
         Error.Message = message;
         Error.IsOpen = true;
-        Status.Text = message;
     }
 
     private void AddText_Click(object sender, RoutedEventArgs e)
@@ -702,16 +784,14 @@ public sealed partial class EditorPage : Page
         if (_loaded && !_loadFailed)
             AddText(new Point(24, 24));
     }
-    private async void Analyze_Click(object sender, RoutedEventArgs e) => await AnalyzeAndSaveAsync();
     private async void Save_Click(object sender, RoutedEventArgs e) => await SaveAsync();
     private async void Save_Invoked(KeyboardAccelerator sender, KeyboardAcceleratorInvokedEventArgs e)
     {
         e.Handled = true;
         await SaveAsync();
     }
-    public void SetStack(string position, bool canOlder, bool canNewer)
+    public void SetStack(bool canOlder, bool canNewer)
     {
-        StackPosition.Text = position;
         OlderButton.IsEnabled = canOlder;
         NewerButton.IsEnabled = canNewer;
     }
@@ -719,10 +799,18 @@ public sealed partial class EditorPage : Page
     private void Library_Click(object sender, RoutedEventArgs e) => App.Current.ShowLibrary();
     private async void Older_Click(object sender, RoutedEventArgs e) => await App.Current.FlipAsync(older: true);
     private async void Newer_Click(object sender, RoutedEventArgs e) => await App.Current.FlipAsync(older: false);
-    private async void NewPage_Click(object sender, RoutedEventArgs e) => await App.Current.CreateNoteAsync();
+    private async void NewPage_Click(SplitButton sender, SplitButtonClickEventArgs e) => await App.Current.CreateNoteAsync();
+    private async void NewPage_Invoked(KeyboardAccelerator sender, KeyboardAcceleratorInvokedEventArgs e)
+    {
+        e.Handled = true;
+        await App.Current.CreateNoteAsync();
+    }
     private async void TearOff_Click(object sender, RoutedEventArgs e) => await App.Current.TearOffAsync();
+    private void Settings_Click(object sender, RoutedEventArgs e) => App.Current.ShowSettings();
 
-    private async void Delete_Click(object sender, RoutedEventArgs e)
+    private async void Delete_Click(object sender, RoutedEventArgs e) => await DeleteSelectedAsync();
+
+    private async Task DeleteSelectedAsync()
     {
         if (_selectedText is null && _selectedInk.Count == 0)
             return;
@@ -765,6 +853,7 @@ public sealed partial class EditorPage : Page
             case VirtualKey.Right: MoveSelection(10, 0); break;
             case VirtualKey.Up: MoveSelection(0, -10); break;
             case VirtualKey.Down: MoveSelection(0, 10); break;
+            case VirtualKey.Delete when _selectedText is not null || _selectedInk.Count > 0: _ = DeleteSelectedAsync(); break;
             // With nothing selected, Escape falls through to the popup and puts it down.
             case VirtualKey.Escape when _selectedText is not null || _selectedInk.Count > 0: ClearSelection(); break;
             default: return;

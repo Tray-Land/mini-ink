@@ -29,16 +29,20 @@ public sealed partial class StickyNoteWindow : WindowEx
         InitializeComponent();
         NoteId = note.Id;
         _editor = new EditorPage(note, draft, sticky: true);
-        _editor.TitleChanged += Editor_TitleChanged;
+        _editor.UsePenTools(PenTools);
         PageHost.Content = _editor;
         ExtendsContentIntoTitleBar = true;
         SetTitleBar(Bar);
+        AppWindow.TitleBar.PreferredHeightOption = TitleBarHeightOption.Tall;
         SystemBackdrop = new MicaBackdrop();
+        // Like a paper note: just a close button, no minimize or maximize.
+        IsMinimizable = false;
         IsMaximizable = false;
         MinWidth = 360;
-        MinHeight = 320;
+        MinHeight = 240;
         IsAlwaysOnTop = pinned;
-        UpdateTitle();
+        // Named for Alt+Tab and the taskbar only; the note itself shows no title.
+        Title = _editor.SavedTitle;
         UpdatePin();
         _bounds = bounds;
         AppWindow.MoveAndResize(bounds);
@@ -69,7 +73,6 @@ public sealed partial class StickyNoteWindow : WindowEx
             return;
         _allowClose = true;
         _layoutSave.Stop();
-        _editor.TitleChanged -= Editor_TitleChanged;
         _editor.Detach();
         AppWindow.Changed -= AppWindow_Changed;
         AppWindow.Closing -= AppWindow_Closing;
@@ -105,9 +108,6 @@ public sealed partial class StickyNoteWindow : WindowEx
         _layoutSave.Stop();
         _layoutSave.Start();
     }
-
-    private void Editor_TitleChanged(object? sender, EventArgs e) => UpdateTitle();
-    private void UpdateTitle() => Title = Bar.Title = _editor.SavedTitle;
 
     private void Pin_Click(object sender, RoutedEventArgs e)
     {

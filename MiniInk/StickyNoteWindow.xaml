@@ -3,6 +3,7 @@
     xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
     xmlns:ex="using:WinUIEx"
+    xmlns:local="using:MiniInk"
     Title="MiniInk note">
     <Grid>
         <Grid.RowDefinitions>
@@ -10,6 +11,35 @@
             <RowDefinition Height="*"/>
         </Grid.RowDefinitions>
         <TitleBar x:Name="Bar">
+            <TitleBar.Resources>
+                <x:Double x:Key="TitleBarMinDragRegionWidth">0</x:Double>
+            </TitleBar.Resources>
+            <TitleBar.LeftHeader>
+                <StackPanel Orientation="Horizontal" Spacing="2">
+                    <StackPanel.Resources>
+                        <StaticResource x:Key="ButtonBackground" ResourceKey="SubtleFillColorTransparentBrush"/>
+                        <StaticResource x:Key="ButtonBackgroundPointerOver" ResourceKey="SubtleFillColorSecondaryBrush"/>
+                        <StaticResource x:Key="ButtonBackgroundPressed" ResourceKey="SubtleFillColorTertiaryBrush"/>
+                        <StaticResource x:Key="ButtonBorderBrush" ResourceKey="SubtleFillColorTransparentBrush"/>
+                        <StaticResource x:Key="ButtonBorderBrushPointerOver" ResourceKey="SubtleFillColorTransparentBrush"/>
+                        <StaticResource x:Key="ButtonBorderBrushPressed" ResourceKey="SubtleFillColorTransparentBrush"/>
+                    </StackPanel.Resources>
+                    <InkToolbar x:Name="PenTools" InitialControls="None" AutomationProperties.AutomationId="PenTools">
+                        <InkToolbarBallpointPenButton/>
+                        <InkToolbarEraserButton/>
+                    </InkToolbar>
+                    <Button Width="34" Height="32" Padding="0" VerticalAlignment="Center"
+                            AutomationProperties.AutomationId="InputTools" AutomationProperties.Name="Mouse and touch"
+                            ToolTipService.ToolTip="What mouse and touch do">
+                        <FontIcon Glyph="&#xE7C9;" FontSize="14"/>
+                        <Button.Flyout>
+                            <Flyout Placement="BottomEdgeAlignedLeft">
+                                <local:InputToolsPanel/>
+                            </Flyout>
+                        </Button.Flyout>
+                    </Button>
+                </StackPanel>
+            </TitleBar.LeftHeader>
             <TitleBar.RightHeader>
                 <StackPanel Orientation="Horizontal" Spacing="2" Margin="0,0,4,0">
                     <StackPanel.Resources>
@@ -26,11 +56,11 @@
                         <StaticResource x:Key="ToggleButtonBorderBrushPointerOver" ResourceKey="SubtleFillColorTransparentBrush"/>
                         <StaticResource x:Key="ToggleButtonBorderBrushPressed" ResourceKey="SubtleFillColorTransparentBrush"/>
                     </StackPanel.Resources>
-                    <ToggleButton x:Name="PinButton" Click="Pin_Click" Width="34" Height="28" Padding="0"
+                    <ToggleButton x:Name="PinButton" Click="Pin_Click" Width="34" Height="32" Padding="0"
                                   AutomationProperties.AutomationId="PinNote">
                         <FontIcon x:Name="PinIcon" Glyph="&#xE718;" FontSize="14"/>
                     </ToggleButton>
-                    <Button Click="ReturnToStack_Click" Width="34" Height="28" Padding="0"
+                    <Button Click="ReturnToStack_Click" Width="34" Height="32" Padding="0"
                             AutomationProperties.AutomationId="ReturnToStack" AutomationProperties.Name="Put back in the stack"
                             ToolTipService.ToolTip="Put back in the stack">
                         <FontIcon Glyph="&#xE73F;" FontSize="14"/>

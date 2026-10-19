@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Globalization;
 using Microsoft.UI.Dispatching;
 using Microsoft.UI.Windowing;
 using Microsoft.UI.Xaml;
@@ -17,6 +18,7 @@ public sealed partial class TrayFlyoutWindow : WindowEx
 {
     private readonly HWND _hwnd;
     private readonly MainPage _page = new();
+    private SettingsPage? _settingsPage;
     private EditorPage? _editor;
     private Guid? _editorId;
     private readonly NoteStack _stack = new();
@@ -84,8 +86,14 @@ public sealed partial class TrayFlyoutWindow : WindowEx
         else if (DateTime.UtcNow - _lastDismiss > TimeSpan.FromMilliseconds(300))
             Summon();
     }
-    // Opening from the tray: a blank page after a while away, otherwise whatever was in use.
-    public void Summon() => ShowPopup(fresh: !_visible && App.Current.FreshPageDue);
+    // Opening from the tray: a blank page after a while away, otherwise whatever was in use, but never settings.
+    public void Summon()
+    {
+        bool fresh = !_visible && App.Current.FreshPageDue;
+        LeaveSettings();
+        ShowPopup(fresh);
+        RefreshBlankPage();
+    }
     public void ShowPopup(bool fresh = false)
     {
         if (_closed)
@@ -156,10 +164,10 @@ public sealed partial class TrayFlyoutWindow : WindowEx
             UpdateStack();
             if (_visible)
             {
-                if (_editor is null)
-                    _page.OnShown();
-                else
+                if (_editor is not null)
                     _editor.Resume();
+                else if (!IsShowingSettings)
+                    _page.OnShown();
             }
         }
         catch (Exception ex)
@@ -182,26 +190,32 @@ public sealed partial class TrayFlyoutWindow : WindowEx
                 ShowEditor(note, draft);
             }
             if (show)
+            {
+                LeaveSettings();
                 ShowPopup();
+            }
         }
         finally
         {
             _navigation.Release();
         }
     }
-    public async Task NewPageAsync()
+    public async Task NewPageAsync(NoteTemplate template = NoteTemplate.None)
     {
         await _navigation.WaitAsync();
         try
         {
             if (_closed)
                 return;
-            if (_editor is not { IsBlankPage: true })
+            Note page = NoteTemplates.Create(template, DateTime.Now, CultureInfo.CurrentCulture, App.Current.TemplateOptions);
+            // An unwritten page is reused when it is already on the paper asked for.
+            if (_editor is not { IsBlankPage: true } || _editor.NoteTemplate != template || _editor.TemplateOptions?.Unfitted != page.Options)
             {
                 if (!await LeaveEditorAsync())
                     return;
-                ShowEditor(new Note(), draft: true);
+                ShowEditor(page, draft: true);
             }
+            LeaveSettings();
             ShowPopup();
         }
         finally
@@ -241,9 +255,10 @@ public sealed partial class TrayFlyoutWindow : WindowEx
         {
             if (_closed || _editor is null || !await _editor.PrepareToCloseAsync())
                 return;
-            // A blank page leaves as a blank sticky; it is written once something is on it.
+            // A blank page leaves as a blank sticky on the same paper; it is written once something is on it.
             bool draft = _editor.IsDraft;
-            Note? note = draft ? new Note() : App.Current.Notes.Find(_editor.NoteId);
+            Note? note = draft ? NoteTemplates.Create(_editor.NoteTemplate, DateTime.Now, CultureInfo.CurrentCulture, _editor.TemplateOptions)
+                : App.Current.Notes.Find(_editor.NoteId);
             if (note is null)
                 return;
             RectInt32 bounds = new(_baseX, _baseY, AppWindow.Size.Width, AppWindow.Size.Height);
@@ -279,12 +294,64 @@ public sealed partial class TrayFlyoutWindow : WindowEx
         _editor.Written += Editor_Written;
         _editorId = note.Id;
         _restored = true;
-        PageHost.Content = _editor;
+        // Restoring the last note behind settings leaves settings showing.
+        if (!IsShowingSettings)
+            PageHost.Content = _editor;
         App.Current.ActiveNoteId = note.Id;
         UpdateStack();
     }
+    public bool IsShowingSettings => PageHost.Content is SettingsPage;
+    public void ShowSettings()
+    {
+        if (_closed)
+            return;
+        _settingsPage ??= new SettingsPage(LeaveSettings);
+        if (!IsShowingSettings)
+        {
+            _page.OnHidden();
+            PageHost.Content = _settingsPage;
+        }
+        _settingsPage.OnShown();
+        if (!_visible)
+            ShowPopup();
+    }
+    // Back to the note or the library that settings opened over.
+    public void LeaveSettings()
+    {
+        if (!IsShowingSettings)
+            return;
+        if (_editor is not null)
+        {
+            PageHost.Content = _editor;
+            RefreshBlankPage();
+        }
+        else
+        {
+            PageHost.Content = _page;
+            if (_visible)
+                _page.OnShown();
+        }
+    }
+    // A blank planner or graph page made before its settings changed, or before the hour moved
+    // on for one that starts at the current hour, starts over.
+    private async void RefreshBlankPage()
+    {
+        await _navigation.WaitAsync();
+        try
+        {
+            if (_closed || IsShowingSettings || _editor is not { IsBlankPage: true } editor)
+                return;
+            Note page = NoteTemplates.Create(editor.NoteTemplate, DateTime.Now, CultureInfo.CurrentCulture, App.Current.TemplateOptions);
+            if (page.Options != editor.TemplateOptions?.Unfitted && await LeaveEditorAsync())
+                ShowEditor(page, draft: true);
+        }
+        finally
+        {
+            _navigation.Release();
+        }
+    }
     private void UpdateStack() =>
-        _editor?.SetStack(_stack.Describe(_editorId), _stack.CanGoOlder(_editorId), _stack.CanGoNewer(_editorId));
+        _editor?.SetStack(_stack.CanGoOlder(_editorId), _stack.CanGoNewer(_editorId));
     public async Task ShowLibraryAsync()
     {
         await _navigation.WaitAsync();
@@ -328,6 +395,7 @@ public sealed partial class TrayFlyoutWindow : WindowEx
         _page.OnHidden();
         _editor?.Detach();
         _editor = null;
+        _settingsPage = null;
         _settings.ColorValuesChanged -= ColorValuesChanged;
         SystemThemeService.Changed -= ThemeChanged;
         Activated -= WindowActivated;
@@ -409,9 +477,13 @@ public sealed partial class TrayFlyoutWindow : WindowEx
             HidePopup();
         }
     }
+    // Escape steps back out of settings before it puts the popup down.
     private void Escape_Invoked(KeyboardAccelerator sender, KeyboardAcceleratorInvokedEventArgs e)
     {
         e.Handled = true;
-        HidePopup();
+        if (IsShowingSettings)
+            LeaveSettings();
+        else
+            HidePopup();
     }
 }
