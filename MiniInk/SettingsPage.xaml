@@ -1,0 +1,133 @@
+<Page
+    x:Class="MiniInk.SettingsPage"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    Background="Transparent">
+    <Page.Resources>
+        <Style x:Key="SectionHeaderStyle" TargetType="TextBlock" BasedOn="{StaticResource BodyStrongTextBlockStyle}">
+            <Setter Property="Margin" Value="0,12,0,4"/>
+        </Style>
+        <!-- The settings card pattern: a label on the left and its control on the right. -->
+        <Style x:Key="CardStyle" TargetType="Grid">
+            <Setter Property="Padding" Value="16,8"/>
+            <Setter Property="MinHeight" Value="52"/>
+            <Setter Property="ColumnSpacing" Value="12"/>
+            <Setter Property="Background" Value="{ThemeResource CardBackgroundFillColorDefaultBrush}"/>
+            <Setter Property="BorderBrush" Value="{ThemeResource CardStrokeColorDefaultBrush}"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="CornerRadius" Value="{ThemeResource ControlCornerRadius}"/>
+        </Style>
+        <Style x:Key="CaptionStyle" TargetType="TextBlock" BasedOn="{StaticResource CaptionTextBlockStyle}">
+            <Setter Property="Foreground" Value="{ThemeResource TextFillColorSecondaryBrush}"/>
+            <Setter Property="TextWrapping" Value="Wrap"/>
+        </Style>
+    </Page.Resources>
+    <Grid Padding="20,20,20,0" RowSpacing="8">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+        </Grid.RowDefinitions>
+        <StackPanel Orientation="Horizontal" Spacing="8">
+            <Button x:Name="BackButton" Click="Back_Click" Style="{StaticResource SubtleButtonStyle}" Width="34" Height="32" Padding="0"
+                    VerticalAlignment="Center" AutomationProperties.AutomationId="SettingsBack"
+                    AutomationProperties.Name="Back" ToolTipService.ToolTip="Back (Esc)">
+                <Button.KeyboardAccelerators>
+                    <KeyboardAccelerator Key="Left" Modifiers="Menu"/>
+                </Button.KeyboardAccelerators>
+                <FontIcon Glyph="&#xE72B;" FontSize="16"/>
+            </Button>
+            <TextBlock Text="Settings" Style="{ThemeResource TitleTextBlockStyle}" VerticalAlignment="Center"/>
+        </StackPanel>
+        <!-- The scroll bar sits at the popup's edge rather than over the cards. -->
+        <ScrollViewer Grid.Row="1" Margin="-20,0">
+            <StackPanel Spacing="4" Padding="20,0,20,20">
+                <TextBlock Text="General" Style="{StaticResource SectionHeaderStyle}" Margin="0,0,0,4"/>
+                <Grid Style="{StaticResource CardStyle}">
+                    <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                    <StackPanel VerticalAlignment="Center">
+                        <TextBlock Text="Start with Windows" TextWrapping="Wrap"/>
+                        <TextBlock x:Name="StartupDescription" Style="{StaticResource CaptionStyle}"/>
+                    </StackPanel>
+                    <ToggleSwitch x:Name="StartupToggle" Grid.Column="1" MinWidth="0" OnContent="" OffContent="" IsEnabled="False"
+                                  Toggled="StartupToggle_Toggled" AutomationProperties.Name="Start with Windows"
+                                  AutomationProperties.AutomationId="StartWithWindows"/>
+                </Grid>
+                <Grid Style="{StaticResource CardStyle}">
+                    <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                    <TextBlock Text="Open to a fresh page" VerticalAlignment="Center" TextWrapping="Wrap"/>
+                    <ComboBox x:Name="FreshAfter" Grid.Column="1" MinWidth="170" VerticalAlignment="Center"
+                              SelectionChanged="FreshAfter_SelectionChanged"
+                              AutomationProperties.Name="Open to a fresh page" AutomationProperties.AutomationId="FreshAfter"
+                              ToolTipService.ToolTip="How long MiniInk must be put down before it opens on a blank page instead of the last note"/>
+                </Grid>
+
+                <TextBlock Text="Planners" Style="{StaticResource SectionHeaderStyle}"/>
+                <Grid Style="{StaticResource CardStyle}">
+                    <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                    <StackPanel VerticalAlignment="Center">
+                        <TextBlock Text="Hour by hour" TextWrapping="Wrap"/>
+                        <TextBlock Text="Which hours each page shows" Style="{StaticResource CaptionStyle}"/>
+                    </StackPanel>
+                    <!-- Choices are in HourRange order. -->
+                    <ComboBox x:Name="HourRangeChoice" Grid.Column="1" MinWidth="170" VerticalAlignment="Center"
+                              SelectionChanged="Template_SelectionChanged"
+                              AutomationProperties.Name="Which hours each page shows" AutomationProperties.AutomationId="HourRange">
+                        <x:String>Fixed range</x:String>
+                        <x:String>Next few hours</x:String>
+                    </ComboBox>
+                </Grid>
+                <Grid x:Name="FixedHoursCard" Style="{StaticResource CardStyle}">
+                    <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                    <TextBlock Text="Hours" VerticalAlignment="Center" TextWrapping="Wrap"/>
+                    <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
+                        <ComboBox x:Name="StartHourChoice" SelectionChanged="Template_SelectionChanged"
+                                  AutomationProperties.Name="First hour" AutomationProperties.AutomationId="DayStartsAt"/>
+                        <TextBlock Text="to" VerticalAlignment="Center"/>
+                        <ComboBox x:Name="EndHourChoice" SelectionChanged="Template_SelectionChanged"
+                                  AutomationProperties.Name="Last hour ends at" AutomationProperties.AutomationId="DayEndsAt"/>
+                    </StackPanel>
+                </Grid>
+                <Grid x:Name="NextHoursCard" Style="{StaticResource CardStyle}">
+                    <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                    <StackPanel VerticalAlignment="Center">
+                        <TextBlock Text="How many hours" TextWrapping="Wrap"/>
+                        <TextBlock Text="Starting with the current hour" Style="{StaticResource CaptionStyle}"/>
+                    </StackPanel>
+                    <ComboBox x:Name="NextHoursChoice" Grid.Column="1" MinWidth="170" VerticalAlignment="Center"
+                              SelectionChanged="Template_SelectionChanged"
+                              AutomationProperties.Name="How many hours" AutomationProperties.AutomationId="NextHours"/>
+                </Grid>
+                <Grid Style="{StaticResource CardStyle}">
+                    <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                    <StackPanel VerticalAlignment="Center">
+                        <TextBlock Text="Day by day" TextWrapping="Wrap"/>
+                        <TextBlock Text="First day of the week" Style="{StaticResource CaptionStyle}"/>
+                    </StackPanel>
+                    <ComboBox x:Name="FirstDayChoice" Grid.Column="1" MinWidth="170" VerticalAlignment="Center"
+                              SelectionChanged="Template_SelectionChanged"
+                              AutomationProperties.Name="First day of the week" AutomationProperties.AutomationId="WeekStartsOn"/>
+                </Grid>
+
+                <TextBlock Text="Graph" Style="{StaticResource SectionHeaderStyle}"/>
+                <Grid Style="{StaticResource CardStyle}">
+                    <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                    <TextBlock Text="Axes cross at" VerticalAlignment="Center" TextWrapping="Wrap"/>
+                    <ComboBox x:Name="OriginChoice" Grid.Column="1" MinWidth="170" VerticalAlignment="Center"
+                              SelectionChanged="Template_SelectionChanged"
+                              AutomationProperties.Name="Axes cross at" AutomationProperties.AutomationId="GraphAxes"/>
+                </Grid>
+                <Grid Style="{StaticResource CardStyle}">
+                    <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                    <TextBlock Text="Numbers on the axes" VerticalAlignment="Center" TextWrapping="Wrap"/>
+                    <ComboBox x:Name="NumbersChoice" Grid.Column="1" MinWidth="170" VerticalAlignment="Center"
+                              SelectionChanged="Template_SelectionChanged"
+                              AutomationProperties.Name="Numbers on the axes" AutomationProperties.AutomationId="GraphNumbers"/>
+                </Grid>
+
+                <TextBlock Margin="0,8,0,0" Style="{StaticResource CaptionStyle}"
+                           Text="These apply to new pages; pages already written on keep their layout."/>
+                <TextBlock x:Name="VersionText" Style="{StaticResource CaptionStyle}"/>
+            </StackPanel>
+        </ScrollViewer>
+    </Grid>
+</Page>

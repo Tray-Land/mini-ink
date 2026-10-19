@@ -45,6 +45,32 @@ public partial class App : Application
         set => ApplicationData.Current.LocalSettings.Values["FreshAfterMinutes"] = value;
     }
     public bool FreshPageDue => FreshPagePolicy.ShouldStartFresh(LastUsed, DateTimeOffset.UtcNow, FreshAfterMinutes);
+    // What new planner and graph pages are made with.
+    public TemplateOptions TemplateOptions
+    {
+        get => TemplateOptions.Parse(ApplicationData.Current.LocalSettings.Values["TemplateOptions"] as string);
+        set => ApplicationData.Current.LocalSettings.Values["TemplateOptions"] = value.ToJson();
+    }
+    // What the mouse and touch do on the canvas, shared by the popup and every sticky note.
+    public InputTool MouseTool
+    {
+        get => InputTools.Parse(ApplicationData.Current.LocalSettings.Values["MouseTool"], InputTools.DefaultMouse);
+        set
+        {
+            ApplicationData.Current.LocalSettings.Values["MouseTool"] = (int)value;
+            InputToolsChanged?.Invoke(this, EventArgs.Empty);
+        }
+    }
+    public InputTool TouchTool
+    {
+        get => InputTools.Parse(ApplicationData.Current.LocalSettings.Values["TouchTool"], InputTools.DefaultTouch);
+        set
+        {
+            ApplicationData.Current.LocalSettings.Values["TouchTool"] = (int)value;
+            InputToolsChanged?.Invoke(this, EventArgs.Empty);
+        }
+    }
+    public event EventHandler? InputToolsChanged;
     private readonly StickyLayoutStore _layout = new(Path.Combine(ApplicationData.Current.LocalFolder.Path, "StickyNotes.json"));
     private readonly Dictionary<Guid, StickyNoteWindow> _stickies = [];
     public IReadOnlySet<Guid> DesktopNoteIds => _stickies.Keys.ToHashSet();
@@ -141,6 +167,8 @@ public partial class App : Application
         sticky.Click += (_, _) => CreateSticky();
         MenuFlyoutItem open = new() { Text = "Open MiniInk", Icon = new SymbolIcon(Symbol.OpenPane) };
         open.Click += (_, _) => ShowPopup();
+        MenuFlyoutItem settings = new() { Text = "Settings", Icon = new SymbolIcon(Symbol.Setting) };
+        settings.Click += (_, _) => ShowSettings();
         MenuFlyoutItem exit = new() { Text = "Exit MiniInk", Icon = new SymbolIcon(Symbol.Cancel) };
         exit.Click += async (_, _) => await ExitAsync();
         menu.Items.Add(open);
@@ -157,6 +185,7 @@ public partial class App : Application
             menu.Items.Add(show);
         }
         menu.Items.Add(new MenuFlyoutSeparator());
+        menu.Items.Add(settings);
         menu.Items.Add(exit);
         args.Flyout = menu;
     }
@@ -173,12 +202,21 @@ public partial class App : Application
             await EnsureFlyout().ShowLibraryAsync();
     }
 
-    public async Task CreateNoteAsync()
+    // Settings open in the popup, in place of the library or the note until going back.
+    public void ShowSettings()
+    {
+        if (_exiting)
+            return;
+        _tray?.CloseFlyout();
+        EnsureFlyout().ShowSettings();
+    }
+
+    public async Task CreateNoteAsync(NoteTemplate template = NoteTemplate.None)
     {
         if (_exitPending)
             return;
         _tray?.CloseFlyout();
-        await EnsureFlyout().NewPageAsync();
+        await EnsureFlyout().NewPageAsync(template);
     }
 
     public async Task OpenNoteAsync(Note note)
@@ -193,6 +231,14 @@ public partial class App : Application
             return;
         }
         await EnsureFlyout().OpenNoteAsync(note);
+    }
+
+    // Deleting a note on the desktop also closes its sticky window, without saving it.
+    public async Task DeleteNoteAsync(Guid id)
+    {
+        if (_stickies.TryGetValue(id, out StickyNoteWindow? sticky))
+            sticky.CloseWindow();
+        await Notes.DeleteAsync(id);
     }
 
     public async Task FlipAsync(bool older)
