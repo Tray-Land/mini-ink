@@ -28,8 +28,6 @@ public sealed class NoteStack
     public Guid? Older(Guid? current) => CanGoOlder(current) ? _ids[IndexOf(current) + 1] : null;
     // Null is the blank page above the newest note.
     public Guid? Newer(Guid? current) => IndexOf(current) is > 0 and int index ? _ids[index - 1] : null;
-    public string Describe(Guid? current) => IndexOf(current) is >= 0 and int index
-        ? $"{index + 1} of {_ids.Count}" : "New page";
 }
 
 public static class FreshPagePolicy
