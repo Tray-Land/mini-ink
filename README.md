@@ -13,28 +13,85 @@ popup is the pad: a blank page on top, and your notes beneath it, newest first.
 
 Left-click the notification-area icon to toggle the popup. Right-click for
 Open MiniInk, New note, New sticky note, Show sticky notes (when any are on
-the desktop), or Exit MiniInk. A second launch reopens the running instance's
-popup instead of adding another icon. The first launch opens on a blank page.
+the desktop), Settings, or Exit MiniInk. A second launch reopens the running
+instance's popup instead of adding another icon. The first launch opens on a
+blank page.
 
 ### Flipping through the stack
 
 - **Older** and **Newer** (or Ctrl+Page Down and Ctrl+Page Up) flip through
-  the pile; the footer shows the position, such as `3 of 12`. Newer from the
-  newest note returns to the blank page. **New page** (Ctrl+N) jumps there.
+  the pile. Newer from the newest note returns to the blank page. **New page** (Ctrl+N) jumps there.
 - The pile's order is captured when the popup opens, so editing a note while
   flipping does not reshuffle it. The next time the popup opens, the notes you
   changed are on top. Only viewing a note does not move it.
 - A blank page is not saved until something is written on it, so flipping and
   reopening never leave empty notes behind.
 - **All notes** opens the searchable library. Picking a note there opens it in
-  the stack.
+  the stack. The bin on each note (or Delete on a focused note) deletes it
+  for good after asking; a note on the desktop has its sticky window closed.
+
+### Starting from a template
+
+**New page** in the popup and **New note** in the library are split buttons.
+The button itself (or Ctrl+N) opens a blank page; the arrow beside it starts
+the page on printed paper instead:
+
+- **Day by day**: the week in two columns, starting on Windows' first day of
+  the week (or the one chosen in Settings), plus a Notes box. The page is
+  titled for the week, such as `Week of October 18`.
+- **Hour by hour**: one row per hour in your region's time format, titled with
+  today's date. Settings picks either a fixed range (7 AM to 9 PM by default)
+  or the next few hours, starting with the current one: six hours at 9:21 AM
+  gives 9:00 AM through 2:00 PM, and a page made late at night runs past
+  midnight. However many hours there are, the rows share the page's height
+  between them. When the rows are tall enough, dotted dividers with small
+  `:15`-style labels split each hour into the finest of 5, 10, 15, or 30
+  minutes that still leaves about 20 pixels to write in.
+- **To-do list**: rows, each with a box to tick.
+- **Lined**, **Grid**, **Dot grid**, and **Graph** (squared paper with a
+  bolder line every five squares and numbered axes; Settings chooses where the
+  axes cross and how often they are numbered, or leaves them off).
+
+The paper is printed behind the page rather than drawn on it, so the eraser and
+selection never touch it, the library's thumbnails leave it out, and it follows
+the light or dark theme. The planners keep a fixed layout, so what is written in a day or an
+hour stays there in a larger sticky window; the papers repeat to fill the page.
+An hour planner fits its rows to the window it is in only while nothing is
+written on it (tearing a blank one off fits it to the sticky window); after
+that its rows stay put.
+Like a blank page, a template page is kept only once something is written on it
+(its suggested title doesn't count), and tearing one off keeps its paper.
+
+Each page keeps the planner and graph choices it was made with, so changing
+them in Settings never moves the lines under existing writing. A blank planner
+or graph page that is still open when you come back from Settings is redrawn
+with the new choices, and a blank next-few-hours page moves on to the current
+hour when the popup is opened again.
+
+### Settings
+
+The gear beside **New note** in the library, **Settings** in the editor's
+**...** menu, and **Settings** in the tray menu all open settings in the popup.
+The back button, Alt+Left, or Escape returns to the library or note it was
+opened over; changes apply immediately.
+
+- **Start with Windows** (off by default). If it was turned off in Windows
+  Settings > Apps > Startup or by policy, the page says so instead of offering
+  a toggle that can't change it.
+- **Open to a fresh page** (see below).
+- **Planners**: whether Hour by hour pages show a fixed range (and which
+  hours) or the next 1 to 24 hours, and the first day of the week for Day by
+  day (or the same as Windows).
+- **Graph**: where the axes cross (center, bottom left, middle left, or no
+  axes) and how often they are numbered (every 5 or 10 squares, every square,
+  or not at all).
 
 ### A fresh page after a while away
 
 Pressing Escape or clicking away puts the popup down and saves the note.
 Picking it up again quickly returns to exactly what you were doing. After it
-has been put down for longer than **Open to a fresh page** (at the bottom of
-the library: 1, 5 (default), 15 or 60 minutes, or Never), it opens on a blank
+has been put down for longer than **Open to a fresh page** (in Settings: 1,
+5 (default), 15 or 60 minutes, or Never), it opens on a blank
 page instead; the previous note is waiting one step down the pile. Never
 always reopens the last note.
 
@@ -49,6 +106,9 @@ handles.
 the pad into its own window, right where the popup was, and leaves a blank page
 behind. Sticky windows:
 
+- are just the page: one slim strip holds a pen and an eraser, Mouse and
+  touch, the pin, Put back in the stack, and close. There is no title box or
+  toolbar; the note autosaves as you write;
 - resize freely, and their canvas grows to fill them;
 - stay above other windows when **Keep on top** (the pin) is on;
 - leave the stack while they are on the desktop. The library marks them
@@ -63,44 +123,58 @@ New sticky note in the tray menu opens a blank sticky window directly.
 
 ![A torn-off sticky note window, kept on top](docs/sticky-note.png)
 
-## Pen, text, and touch
+## Pen, mouse, and touch
 
-- **Only pen input draws.** Choose a pen, pencil, highlighter, or eraser in the
-  native ink toolbar. The initial pen color is blue for contrast in both themes.
-- **Click empty space to type.** Click existing text to edit it, or use Add text
-  in the toolbar. Text stays where it was placed.
-- **Touch moves objects, not ink input.** Drag text with a finger. Tap ink to
-  analyze it and select a recognized word, drawing, or individual unrecognized
-  stroke; then drag the selected group with touch or mouse.
+- **The pen always draws.** Choose a pen, pencil, highlighter, or eraser in the
+  native ink toolbar (sticky notes offer just the pen and eraser). The canvas
+  always draws in the color the toolbar shows. Pens start white on a dark page
+  and black on a light one; if the theme changes, a pen still in that starting
+  color follows it, while a color you picked stays.
+- **Mouse and touch** (the arrow-and-hand button beside the ink tools) sets
+  what the mouse does and what touch does, each one of:
+  - **Add text** (the mouse's default): click or tap empty space to type
+    there, or existing text to edit it.
+  - **Select and drag** (touch's default): tap ink to select it together with
+    every stroke touching it, or within a few pixels of one that does, which
+    picks up a word or a drawing. Tap text to select it, and tap it again to
+    edit it.
+  - **Draw**: ink like the pen, with whichever ink tool is chosen.
+
+  With Add text or Select and drag, dragging text or a selected ink group
+  moves it; text stays where it is placed. The choice applies to the popup and
+  every sticky note and is remembered. Add text in the toolbar also starts a
+  text box.
 - The arrow keys nudge selected objects when a text field is not focused.
   Escape clears a selection first, then puts the popup down.
-  Delete selected object is in the overflow menu, with confirmation.
+  Delete (or Delete selected object in the overflow menu) removes the
+  selection, with confirmation.
 - Autosave runs after a short idle interval, never during a pen stroke or
-  object drag. Save and Ctrl+S also save immediately.
+  object drag. Ctrl+S (or Save in the overflow menu) also saves immediately.
 
 The canvas fills the popup or sticky window, with a 400 by 400 logical-pixel
 minimum. It grows to keep anything placed further out, such as ink drawn in a
 large sticky window, so smaller windows show that content with scrollbars.
-Touch remains reserved for object manipulation.
+Scrolling never takes over touch; it stays with the chosen touch tool.
 The popup follows the **taskbar's** light/dark mode, including theme-specific
 tray icons generated from the supplied `icon.svg`.
 
-## Local handwriting search
+## Finding notes
 
-Title, typed text, recognized handwriting, and recognition alternatives are
-indexed locally. Every whitespace-separated search term must match the note.
-Original ink is preserved as ISF, not converted into text or replaced by
-recognition results.
+The library lists notes newest first, each with a thumbnail of its ink, its
+title, any typed text, and when it was last changed. Handwriting is not
+recognized, so ink is found by eye from its thumbnail. Search matches the
+title, typed text, and date, either as the list shows it (`Oct 19`) or
+written out (`October`, `Monday`, `2026`); every whitespace-separated term
+must match.
 
-Windows handwriting language support must be installed for reliable
-recognition. Accuracy varies with handwriting, language, and drawing style;
-it is not guaranteed for every word. Ink is saved **before** analysis, so a
-recognition failure cannot prevent note saving. Errors are shown in the
-popup; Analyze ink retries.
+Thumbnails are small line drawings of the ink, fitted to the tile and never
+enlarged, drawn on a worker thread when a note is saved and kept with it.
+Notes saved before thumbnails existed get one drawn from their ink the first
+time the library shows them.
 
 Each note is an atomically replaced JSON file under the package's
 `LocalState\Notes` folder, containing text positions, ISF ink encoded as
-Base64, and handwriting search terms. Unreadable files are reported without
+Base64, its thumbnail, and the template it was started from. Unreadable files are reported without
 being overwritten. Sticky window positions, sizes, and pins are kept in
 `LocalState\StickyNotes.json`; if that file is unreadable, MiniInk starts with
 no sticky windows. Crash diagnostics are written to `%TEMP%\MiniInk-crash.log`.
@@ -124,7 +198,7 @@ No signed release installer is included yet. The CLI registers a development
 package locally; it is not a Microsoft Store installation.
 
 ```powershell
-# Pure search, stack order, fresh-page timing, sticky layout, storage, and corruption checks
+# Pure search, thumbnails, stack order, fresh-page timing, templates, sticky layout, storage, and corruption checks
 dotnet run --project .\MiniInk.Tests\MiniInk.Tests.csproj
 
 # Local UI smoke checks (unlocked desktop; creates a uniquely named test note)

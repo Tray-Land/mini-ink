@@ -37,8 +37,15 @@ function Capture([string]$Name) {
     if (-not (Test-Path $path) -or (Get-Item $path).Length -eq 0) { throw 'Screenshot missing.' }
     $screenshots.Add($path)
 }
-function Saved {
-    Ui @('wait-for', 'NoteStatus', '--value', 'Saved on this device', '--contains', '-t', '15000') | Out-Null
+# The page shows no save status, so wait for the saved smoke note to pass $Condition (given the note as $args[0]).
+function Saved([scriptblock]$Condition, [string]$Failure) {
+    $deadline = [DateTime]::UtcNow.AddSeconds(15)
+    do {
+        Start-Sleep -Milliseconds 250
+        $saved = try { Note } catch { $null }
+        if ($saved -and (& $Condition $saved)) { return $saved }
+    } while ([DateTime]::UtcNow -lt $deadline)
+    throw $Failure
 }
 function Note {
     $matches = @(Get-ChildItem -LiteralPath $noteFolder -Filter '*.json' | ForEach-Object {
@@ -93,11 +100,11 @@ try {
         Ui @('drag', $point, $point)
         Ui @('wait-for', 'CanvasText', '-t', '3000')
         Ui @('set-value', 'CanvasText', 'local search marker')
+        Ui @('invoke', 'MoreButton')
+        Ui @('wait-for', 'SaveNote', '-t', '3000')
         Ui @('invoke', 'SaveNote')
-        Saved
-        $before = Note
-        if ($before.Texts.Count -ne 1) { throw 'Mouse click did not create one text object.' }
-        Ui @('wait-for', 'NoteStatus', '--value', '0 ink strokes', '--contains', '-t', '3000')
+        $saved = Saved { $args[0].Texts.Count -eq 1 } 'Mouse click did not create one text object.'
+        if ($saved.StrokeCount -ne 0) { throw 'Mouse click drew ink.' }
     }
     Test 'Touch moves text without drawing' {
         $before = Note
@@ -109,33 +116,25 @@ try {
         $x = [int]($text.x + 15*$scale)
         $y = [int]($text.y + 10*$scale)
         Ui @('touch', '--at', "$x,$y", '--to-point', "$x,$([int]($y+65*$scale))", '-g', 'swipe')
-        Start-Sleep -Seconds 2
-        Saved
-        $after = Note
-        if ([double]$after.Texts[0].Y - [double]$before.Texts[0].Y -lt 20) { throw 'Text did not move at least 20 canvas pixels.' }
+        Saved { [double]$args[0].Texts[0].Y - [double]$before.Texts[0].Y -ge 20 } 'Text did not move at least 20 canvas pixels.' | Out-Null
         Ui @('touch', '--at', (Point 310 300), '--to-point', (Point 350 330), '-g', 'swipe')
-        Ui @('wait-for', 'NoteStatus', '--value', '0 ink strokes', '--contains', '-t', '3000')
+        # Ink would be autosaved within a couple of seconds.
+        Start-Sleep -Seconds 3
+        if ((Note).StrokeCount -ne 0) { throw 'Touch drew ink.' }
     }
-    Test 'Pen creates ink and local handwriting index' {
+    Test 'Pen creates ink and its thumbnail' {
         $path = @((Point 55 240), (Point 85 260), (Point 115 240), (Point 145 260), (Point 175 240)) -join ' '
         Ui @('pen', '--path', $path, '--duration-ms', '500')
-        Start-Sleep -Seconds 3
-        Saved
-        Ui @('wait-for', 'NoteStatus', '--value', '1 ink strokes', '--contains', '-t', '3000')
-        $note = Note
+        $note = Saved { $args[0].StrokeCount -eq 1 } 'The pen stroke was not saved.'
         if ($note.InkBase64.Length -eq 0) { throw 'Ink was not persisted.' }
-        if ($note.IndexError) { throw "Handwriting indexing failed: $($note.IndexError)" }
-        if (-not ($note.RecognizedText + $note.HandwritingKeywords).Trim()) { throw 'No handwriting search terms were produced.' }
+        if ($note.Thumbnail -notmatch '^M[\d.]+,[\d.]+L') { throw "No thumbnail was drawn: '$($note.Thumbnail)'" }
     }
-    Test 'Tap analyzes/selects ink; touch drags the selected group' {
+    Test 'Tap selects ink; touch drags the selected group' {
         Ui @('touch', '--at', (Point 85 260))
-        Ui @('wait-for', 'NoteStatus', '--value', 'Ink group selected', '--contains', '-t', '10000')
+        Start-Sleep -Milliseconds 500
         $before = Note
         Ui @('touch', '--at', (Point 85 260), '--to-point', (Point 125 310), '-g', 'swipe')
-        Start-Sleep -Seconds 3
-        Saved
-        $after = Note
-        if ($before.InkBase64 -eq $after.InkBase64) { throw 'Moving selected ink did not change the persisted ink.' }
+        Saved { $args[0].InkBase64 -ne $before.InkBase64 } 'Moving selected ink did not change the persisted ink.' | Out-Null
         Capture '02-editor.png'
     }
     Test 'Dismiss saves and second launch restores the same note' {
@@ -145,26 +144,25 @@ try {
         Ui @('wait-for', 'NoteTitle', '--value', $marker, '-t', '10000')
         if ((Note).Texts[0].Text -ne 'local search marker') { throw 'Text did not survive dismiss.' }
     }
-    Test 'Handwriting-only search finds the saved note' {
-        $note = Note
-        $term = @($note.RecognizedText -split '\s+' | Where-Object { $_ })[0]
-        if (-not $term) { $term = @($note.HandwritingKeywords -split '\s+' | Where-Object { $_ })[0] }
+    Test 'Search finds the saved note by typed text and date' {
+        # Only the date written out holds the year.
+        $year = ([datetime](Note).Updated).ToLocalTime().Year
         Ui @('invoke', 'BackToNotes')
         Ui @('wait-for', 'TextBox', '-t', '10000')
-        Ui @('set-value', 'TextBox', $term)
+        Ui @('set-value', 'TextBox', "marker $year")
         Ui @('wait-for', $marker, '-t', '5000')
         Capture '03-search.png'
     }
     Test 'Stack flips to the blank page and back' {
         Ui @('click', $marker)
         Ui @('wait-for', 'NoteTitle', '--value', $marker, '-t', '10000')
-        Ui @('wait-for', 'StackPosition', '--value', '1 of', '--contains', '-t', '5000')
         Ui @('invoke', 'NewerNote')
-        Ui @('wait-for', 'StackPosition', '--value', 'New page', '-t', '5000')
+        # Only the blank page above the newest note has nothing newer.
+        Ui @('wait-for', 'NewerNote', '--property', 'IsEnabled', '--value', 'False', '-t', '5000')
         Ui @('invoke', 'OlderNote')
         Ui @('wait-for', 'NoteTitle', '--value', $marker, '-t', '5000')
     }
-    Test 'Tear-off opens a sticky window that pins and goes back' {
+    Test 'Tear-off opens a plain sticky window that pins and goes back' {
         $id = (Note).Id
         $layoutPath = Join-Path $noteFolder '..\StickyNotes.json'
         function Placement { @(Get-Content -LiteralPath $layoutPath -Raw | ConvertFrom-Json) | Where-Object NoteId -eq $id }
@@ -177,6 +175,10 @@ try {
         } while (-not $sticky -and [DateTime]::UtcNow -lt $deadline)
         if (-not $sticky) { throw 'Tear-off did not open a sticky window.' }
         if (-not (Placement)) { throw 'The sticky window was not saved for the next launch.' }
+        $shown = @(Nodes @((Checked @('ui', 'inspect', '--json', '--depth', '8', '-w', "$($sticky.hwnd)") | ConvertFrom-Json).windows |
+            ForEach-Object { $_.elements }) | Where-Object { -not $_.isOffscreen } | ForEach-Object { $_.automationId })
+        if ('PenTools' -notin $shown -or 'NoteCanvas' -notin $shown) { throw 'The sticky window lost its pen tools or canvas.' }
+        if (@('NoteTitle', 'SaveNote', 'NewPage' | Where-Object { $_ -in $shown }).Count) { throw 'The sticky window shows editor chrome.' }
         Checked @('ui', 'invoke', 'PinNote', '-w', "$($sticky.hwnd)") | Out-Null
         Start-Sleep -Seconds 1
         if (-not (Placement).Pinned) { throw 'Pinning was not saved.' }
@@ -186,6 +188,49 @@ try {
         Checked @('ui', 'invoke', 'ReturnToStack', '-w', "$($sticky.hwnd)") | Out-Null
         Ui @('wait-for', 'NoteTitle', '--value', $marker, '-t', '10000')
         if (Placement) { throw 'The note stayed on the desktop after being put back.' }
+    }
+    Test 'The New page arrow starts an unsaved page from a template' {
+        $before = @(Get-ChildItem -LiteralPath $noteFolder -Filter '*.json').Count
+        Ui @('invoke', 'NewPage', '--action', 'expand')
+        Ui @('wait-for', 'TemplateWeek', '-t', '5000')
+        Ui @('invoke', 'TemplateWeek')
+        Ui @('wait-for', 'NoteTitle', '--value', 'Week of', '--contains', '-t', '5000')
+        Ui @('wait-for', 'NewerNote', '--property', 'IsEnabled', '--value', 'False', '-t', '5000')
+        Capture '05-template.png'
+        Ui @('invoke', 'NewPage')
+        $deadline = [DateTime]::UtcNow.AddSeconds(5)
+        do {
+            Start-Sleep -Milliseconds 200
+            $title = "$(Ui @('get-value', 'NoteTitle') | Select-Object -Last 1)".Trim()
+        } while ($title -and [DateTime]::UtcNow -lt $deadline)
+        if ($title) { throw 'New page kept the template page instead of opening a blank one.' }
+        if (@(Get-ChildItem -LiteralPath $noteFolder -Filter '*.json').Count -ne $before) { throw 'An unwritten template page was saved.' }
+    }
+    Test 'The library deletes a note after asking' {
+        Ui @('invoke', 'BackToNotes')
+        Ui @('wait-for', 'TextBox', '-t', '10000')
+        Ui @('set-value', 'TextBox', $marker)
+        Ui @('wait-for', $marker, '-t', '5000')
+        Ui @('invoke', 'DeleteNote')
+        Ui @('wait-for', 'PrimaryButton', '-t', '5000')
+        Capture '06-delete.png'
+        Ui @('invoke', 'PrimaryButton')
+        Ui @('wait-for', $marker, '--gone', '-t', '5000')
+        $left = @(Get-ChildItem -LiteralPath $noteFolder -Filter '*.json' |
+            Where-Object { (Get-Content -LiteralPath $_.FullName -Raw | ConvertFrom-Json).Title -eq $marker })
+        if ($left.Count) { throw 'The deleted note is still saved.' }
+    }
+    Test 'Settings open over the library and Escape goes back to it' {
+        Ui @('invoke', 'OpenSettings')
+        Ui @('wait-for', 'SettingsBack', '-t', '5000')
+        $shown = @(Nodes @((Inspect).windows | ForEach-Object { $_.elements }) | ForEach-Object { $_.automationId })
+        $missing = @('StartWithWindows', 'FreshAfter', 'HourRange', 'DayStartsAt', 'DayEndsAt', 'WeekStartsOn', 'GraphAxes', 'GraphNumbers' |
+            Where-Object { $_ -notin $shown })
+        if ($missing.Count) { throw "Settings is missing $($missing -join ', ')." }
+        Capture '07-settings.png'
+        Ui @('send-keys', 'escape', '--via', 'send-input')
+        Ui @('wait-for', 'NewNote', '-t', '5000')
+        if (-not (Element 'NewNote')) { throw 'Escape put the popup down instead of leaving settings.' }
     }
 } catch {
     $results.Add(@{ name='UI execution'; status='FAIL'; detail="$_" })
