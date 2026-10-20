@@ -19,6 +19,20 @@ public enum NoteTemplate
     Graph
 }
 
+// The color of a note's paper. Default follows the theme like the rest of the window; the others
+// are sticky note colors, bright on a light theme and deeper on a dark one so the ink still shows.
+[JsonConverter(typeof(JsonStringEnumConverter<NoteColor>))]
+public enum NoteColor
+{
+    Default,
+    Yellow,
+    Pink,
+    Green,
+    Blue,
+    Orange,
+    Purple
+}
+
 // One mark of a template, in canvas coordinates. Strong lines are dividers, axes, and dots,
 // which are sparse enough to need it; a line with DotSpacing is drawn as a row of dots that far apart.
 public abstract record TemplateMark;
@@ -104,10 +118,11 @@ public static class NoteTemplates
     // 400 by 480. Centered axes stay where they were before there was a choice.
     private const double GraphCenter = 200, GraphNear = 40, GraphBottom = 440;
 
-    public static Note Create(NoteTemplate template, DateTime now, CultureInfo culture, TemplateOptions? options = null)
+    public static Note Create(NoteTemplate template, DateTime now, CultureInfo culture, TemplateOptions? options = null,
+        NoteColor paper = NoteColor.Default)
     {
         options ??= new();
-        Note note = new() { Template = template };
+        Note note = new() { Template = template, Paper = paper };
         DateTimeFormatInfo format = culture.DateTimeFormat;
         switch (template)
         {

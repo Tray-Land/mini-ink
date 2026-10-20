@@ -147,7 +147,8 @@ public sealed partial class TrayFlyoutWindow : WindowEx
             {
                 _restored = true;
                 if (_editor is not { IsBlankPage: true })
-                    await OpenNoteAsync(new Note(), show: false, draft: true);
+                    await OpenNoteAsync(NoteTemplates.Create(App.Current.DefaultTemplate, DateTime.Now, CultureInfo.CurrentCulture,
+                        App.Current.TemplateOptions, App.Current.DefaultPaper), show: false, draft: true);
             }
             else if (!_restored)
             {
@@ -159,7 +160,7 @@ public sealed partial class TrayFlyoutWindow : WindowEx
                 if (active is not null)
                     await OpenNoteAsync(active, show: false);
                 else if (id is not null)
-                    await OpenNoteAsync(new Note(), show: false, draft: true);
+                    await OpenNoteAsync(new Note { Paper = App.Current.DefaultPaper }, show: false, draft: true);
             }
             UpdateStack();
             if (_visible)
@@ -207,9 +208,11 @@ public sealed partial class TrayFlyoutWindow : WindowEx
         {
             if (_closed)
                 return;
-            Note page = NoteTemplates.Create(template, DateTime.Now, CultureInfo.CurrentCulture, App.Current.TemplateOptions);
+            Note page = NoteTemplates.Create(template, DateTime.Now, CultureInfo.CurrentCulture, App.Current.TemplateOptions,
+                App.Current.DefaultPaper);
             // An unwritten page is reused when it is already on the paper asked for.
-            if (_editor is not { IsBlankPage: true } || _editor.NoteTemplate != template || _editor.TemplateOptions?.Unfitted != page.Options)
+            if (_editor is not { IsBlankPage: true } || _editor.NoteTemplate != template || _editor.Paper != page.Paper ||
+                _editor.TemplateOptions?.Unfitted != page.Options)
             {
                 if (!await LeaveEditorAsync())
                     return;
@@ -237,7 +240,7 @@ public sealed partial class TrayFlyoutWindow : WindowEx
             {
                 Guid? target = older ? _stack.Older(current) : _stack.Newer(current);
                 Note? next = target is Guid id ? App.Current.Notes.Find(id) : null;
-                ShowEditor(next ?? new Note(), draft: next is null);
+                ShowEditor(next ?? new Note { Paper = App.Current.DefaultPaper }, draft: next is null);
             }
             else
                 UpdateStack();
@@ -257,13 +260,14 @@ public sealed partial class TrayFlyoutWindow : WindowEx
                 return;
             // A blank page leaves as a blank sticky on the same paper; it is written once something is on it.
             bool draft = _editor.IsDraft;
-            Note? note = draft ? NoteTemplates.Create(_editor.NoteTemplate, DateTime.Now, CultureInfo.CurrentCulture, _editor.TemplateOptions)
+            Note? note = draft ? NoteTemplates.Create(_editor.NoteTemplate, DateTime.Now, CultureInfo.CurrentCulture, _editor.TemplateOptions,
+                    _editor.Paper)
                 : App.Current.Notes.Find(_editor.NoteId);
             if (note is null)
                 return;
             RectInt32 bounds = new(_baseX, _baseY, AppWindow.Size.Width, AppWindow.Size.Height);
             _stack.Retain(id => id != note.Id);
-            ShowEditor(new Note(), draft: true);
+            ShowEditor(new Note { Paper = App.Current.DefaultPaper }, draft: true);
             HidePopup();
             App.Current.OpenSticky(note, bounds, draft: draft);
         }
@@ -341,7 +345,8 @@ public sealed partial class TrayFlyoutWindow : WindowEx
         {
             if (_closed || IsShowingSettings || _editor is not { IsBlankPage: true } editor)
                 return;
-            Note page = NoteTemplates.Create(editor.NoteTemplate, DateTime.Now, CultureInfo.CurrentCulture, App.Current.TemplateOptions);
+            Note page = NoteTemplates.Create(editor.NoteTemplate, DateTime.Now, CultureInfo.CurrentCulture, App.Current.TemplateOptions,
+                editor.Paper);
             if (page.Options != editor.TemplateOptions?.Unfitted && await LeaveEditorAsync())
                 ShowEditor(page, draft: true);
         }

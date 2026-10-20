@@ -9,6 +9,7 @@ namespace MiniInk;
 public sealed partial class SettingsPage : Page
 {
     private static readonly GraphOrigin[] Origins = Enum.GetValues<GraphOrigin>();
+    private static readonly NoteTemplate[] Templates = Enum.GetValues<NoteTemplate>();
     private readonly Action _back;
     private bool _loading;
 
@@ -19,6 +20,8 @@ public sealed partial class SettingsPage : Page
         CultureInfo culture = CultureInfo.CurrentCulture;
         DateTimeFormatInfo format = culture.DateTimeFormat;
         FreshAfter.ItemsSource = FreshPagePolicy.Choices.Select(FreshPagePolicy.Label).ToArray();
+        DefaultTemplateChoice.ItemsSource = Templates.Select(template => TemplateMenu.Label(template)).ToArray();
+        DefaultPaperChoice.ItemsSource = NoteColors.All.Select(NoteColors.Label).ToArray();
         // The day runs from a starting hour to an ending one, so 24 (midnight) can only end it.
         StartHourChoice.ItemsSource = Enumerable.Range(0, 24).Select(hour => NoteTemplates.HourLabel(hour, culture)).ToArray();
         EndHourChoice.ItemsSource = Enumerable.Range(1, 24).Select(hour => NoteTemplates.HourLabel(hour, culture)).ToArray();
@@ -63,6 +66,8 @@ public sealed partial class SettingsPage : Page
     {
         _loading = true;
         FreshAfter.SelectedIndex = FreshPagePolicy.Choices.ToList().IndexOf(App.Current.FreshAfterMinutes);
+        DefaultTemplateChoice.SelectedIndex = Array.IndexOf(Templates, App.Current.DefaultTemplate);
+        DefaultPaperChoice.SelectedIndex = Array.IndexOf(NoteColors.All, App.Current.DefaultPaper);
         ShowTemplateOptions(App.Current.TemplateOptions);
         _loading = false;
         ShowStartupState(await StartupService.GetStateAsync());
@@ -110,6 +115,18 @@ public sealed partial class SettingsPage : Page
         _loading = true;
         ShowTemplateOptions(options);
         _loading = false;
+    }
+
+    private void DefaultTemplate_SelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (!_loading && DefaultTemplateChoice.SelectedIndex >= 0)
+            App.Current.DefaultTemplate = Templates[DefaultTemplateChoice.SelectedIndex];
+    }
+
+    private void DefaultPaper_SelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (!_loading && DefaultPaperChoice.SelectedIndex >= 0)
+            App.Current.DefaultPaper = NoteColors.All[DefaultPaperChoice.SelectedIndex];
     }
 
     private void FreshAfter_SelectionChanged(object sender, SelectionChangedEventArgs e)

@@ -17,6 +17,7 @@ public sealed class Note
     public double CanvasWidth { get; set; } = 400;
     public double CanvasHeight { get; set; } = 400;
     public NoteTemplate Template { get; set; }
+    public NoteColor Paper { get; set; }
     // The planner or graph choices the page was made with; null on other pages.
     public TemplateOptions? Options { get; set; }
     [JsonIgnore]

@@ -108,6 +108,12 @@
                     </Flyout>
                 </AppBarButton.Flyout>
             </AppBarButton>
+            <AppBarButton x:Name="PaperButton" Label="Page color" AutomationProperties.AutomationId="PaperColor"
+                          ToolTipService.ToolTip="Page color">
+                <AppBarButton.Icon>
+                    <FontIcon Glyph="&#xE790;"/>
+                </AppBarButton.Icon>
+            </AppBarButton>
             <AppBarButton Icon="Edit" Label="Add text" Click="AddText_Click" AutomationProperties.AutomationId="AddText"
                           ToolTipService.ToolTip="Add text"/>
             <CommandBar.SecondaryCommands>
@@ -124,8 +130,10 @@
                       HorizontalScrollMode="Disabled" VerticalScrollMode="Disabled" HorizontalContentAlignment="Left"
                       VerticalContentAlignment="Top" AutomationProperties.AutomationId="NoteCanvas"
                       AutomationProperties.Name="Note canvas" SizeChanged="CanvasScroll_SizeChanged">
-            <Grid x:Name="Surface" Width="400" Height="400" Background="{ThemeResource LayerFillColorDefaultBrush}"
-                  ManipulationMode="None">
+            <Grid x:Name="Surface" Width="400" Height="400" ManipulationMode="None">
+                <!-- The page color: the theme's own, or a sticky note color over it. -->
+                <Border Background="{ThemeResource LayerFillColorDefaultBrush}" IsHitTestVisible="False"/>
+                <Border x:Name="PaperColor" IsHitTestVisible="False" Visibility="Collapsed"/>
                 <Canvas x:Name="TemplateLayer" IsHitTestVisible="False"/>
                 <Canvas x:Name="TextLayer" IsHitTestVisible="False"/>
                 <InkCanvas x:Name="Ink" AutomationProperties.AutomationId="InkCanvas"/>

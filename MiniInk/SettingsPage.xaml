@@ -61,6 +61,26 @@
                               ToolTipService.ToolTip="How long MiniInk must be put down before it opens on a blank page instead of the last note"/>
                 </Grid>
 
+                <Grid Style="{StaticResource CardStyle}">
+                    <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                    <TextBlock Text="New notes start on" VerticalAlignment="Center" TextWrapping="Wrap"/>
+                    <ComboBox x:Name="DefaultTemplateChoice" Grid.Column="1" MinWidth="170" VerticalAlignment="Center"
+                              SelectionChanged="DefaultTemplate_SelectionChanged"
+                              AutomationProperties.Name="New notes start on" AutomationProperties.AutomationId="DefaultTemplate"
+                              ToolTipService.ToolTip="The paper used by New note, Ctrl+N, and the page MiniInk opens to"/>
+                </Grid>
+
+                <Grid Style="{StaticResource CardStyle}">
+                    <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                    <StackPanel VerticalAlignment="Center">
+                        <TextBlock Text="New notes use the color" TextWrapping="Wrap"/>
+                        <TextBlock Text="Brighter in the light theme, deeper in the dark one" Style="{StaticResource CaptionStyle}"/>
+                    </StackPanel>
+                    <ComboBox x:Name="DefaultPaperChoice" Grid.Column="1" MinWidth="170" VerticalAlignment="Center"
+                              SelectionChanged="DefaultPaper_SelectionChanged"
+                              AutomationProperties.Name="New notes use the color" AutomationProperties.AutomationId="DefaultPaper"/>
+                </Grid>
+
                 <TextBlock Text="Planners" Style="{StaticResource SectionHeaderStyle}"/>
                 <Grid Style="{StaticResource CardStyle}">
                     <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>

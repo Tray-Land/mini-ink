@@ -78,6 +78,10 @@ DateTime thursday = new(2026, 10, 22);
 Note blank = NoteTemplates.Create(NoteTemplate.None, thursday, us);
 Assert(blank.Template == NoteTemplate.None && blank.Title == Note.Untitled && blank.CanvasWidth == 400 && blank.CanvasHeight == 400 &&
     !NoteTemplates.Layout(NoteTemplate.None, 400, 400, us).Any(), "A blank page has no template, title, or lines.");
+Note pink = NoteTemplates.Create(NoteTemplate.Lined, thursday, us, paper: NoteColor.Pink);
+Assert(blank.Paper == NoteColor.Default && pink.Paper == NoteColor.Pink, "A page is made on the paper color asked for.");
+Assert(JsonSerializer.Deserialize(JsonSerializer.Serialize(pink, NoteJsonContext.Default.Note), NoteJsonContext.Default.Note)?.Paper == NoteColor.Pink &&
+    JsonSerializer.Deserialize("{}", NoteJsonContext.Default.Note)?.Paper == NoteColor.Default, "Paper color round-trips, and older notes have none.");
 Note week = NoteTemplates.Create(NoteTemplate.Week, thursday, us);
 Assert(week.Template == NoteTemplate.Week && week.Title == "Week of October 18" &&
     NoteTemplates.Create(NoteTemplate.Week, thursday, uk).Title == "Week of 19 October",

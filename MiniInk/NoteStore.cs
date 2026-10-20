@@ -38,7 +38,7 @@ public sealed class NoteStore(string folder)
                         note.StrokeCount is < 0 ||
                         !double.IsFinite(note.CanvasWidth) || !double.IsFinite(note.CanvasHeight) ||
                         note.CanvasWidth < 100 || note.CanvasHeight < 100 || !Enum.IsDefined(note.Template) ||
-                        note.Options is { IsValid: false } ||
+                        !Enum.IsDefined(note.Paper) || note.Options is { IsValid: false } ||
                         note.Texts.Any(t => t is null || t.Text is null || t.Id == Guid.Empty ||
                             !double.IsFinite(t.X) || !double.IsFinite(t.Y) || t.X < 0 || t.Y < 0))
                         throw new InvalidDataException("Unsupported or invalid note document.");

@@ -18,6 +18,9 @@ public static class TemplateMenu
             (NoteTemplate.Graph, "Graph", "")]
     ];
 
+    public static string Label(NoteTemplate template) =>
+        Groups.SelectMany(group => group).First(entry => entry.Template == template).Label;
+
     // Each split button needs its own menu.
     public static MenuFlyout Create()
     {

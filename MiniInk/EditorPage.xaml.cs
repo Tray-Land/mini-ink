@@ -57,6 +57,7 @@ public sealed partial class EditorPage : Page
     public bool IsDraft => _isDraft;
     public NoteTemplate NoteTemplate => _note.Template;
     public TemplateOptions? TemplateOptions => _note.Options;
+    public NoteColor Paper => _note.Paper;
     // Nothing written yet; a template's lines and suggested title don't count.
     public bool IsBlankPage => _isDraft && NoteTitle.Text.Trim() == _draftTitle &&
         _texts.All(t => string.IsNullOrWhiteSpace(t.Text)) && Ink.InkPresenter.StrokeContainer.GetStrokes().Count == 0;
@@ -73,6 +74,7 @@ public sealed partial class EditorPage : Page
         _titleText = note.Title == Note.Untitled ? "" : note.Title;
         _draftTitle = _titleText.Trim();
         NoteTitle.Text = _titleText;
+        ApplyPaper();
         ApplyInputTools();
         // A sticky note is just the page; its window carries a smaller set of pen tools.
         if (sticky)
@@ -85,6 +87,7 @@ public sealed partial class EditorPage : Page
         {
             UsePenTools(PenTools);
             NewPageButton.Flyout = TemplateMenu.Create();
+            PaperButton.Flyout = PaperMenu.Create(() => _note.Paper, () => ActualTheme == ElementTheme.Dark, SetPaper);
         }
         Ink.InkPresenter.StrokesCollected += (_, _) => InkChanged();
         Ink.InkPresenter.StrokesErased += (_, _) => InkChanged();
@@ -115,10 +118,32 @@ public sealed partial class EditorPage : Page
         Unloaded += (_, _) => App.Current.InputToolsChanged -= InputTools_Changed;
         ActualThemeChanged += (_, _) =>
         {
+            ApplyPaper();
             UseThemeInk();
             SyncInk();
             RenderTemplate();
         };
+    }
+
+    private void SetPaper(NoteColor color)
+    {
+        if (_note.Paper == color)
+            return;
+        _note.Paper = color;
+        ApplyPaper();
+        Changed();
+    }
+
+    // Sticky colors have a light and a dark shade, so the page follows the theme like its ink does.
+    private void ApplyPaper()
+    {
+        if (NoteColors.Paper(_note.Paper, ActualTheme == ElementTheme.Dark) is Windows.UI.Color color)
+        {
+            PaperColor.Background = new SolidColorBrush(color);
+            PaperColor.Visibility = Visibility.Visible;
+        }
+        else
+            PaperColor.Visibility = Visibility.Collapsed;
     }
 
     public void UsePenTools(InkToolbar tools)
@@ -659,6 +684,7 @@ public sealed partial class EditorPage : Page
             CanvasWidth = content.Width,
             CanvasHeight = content.Height,
             Template = _note.Template,
+            Paper = _note.Paper,
             Options = _note.Options,
             StrokeCount = Ink.InkPresenter.StrokeContainer.GetStrokes().Count
         };

@@ -51,6 +51,20 @@ public partial class App : Application
         get => TemplateOptions.Parse(ApplicationData.Current.LocalSettings.Values["TemplateOptions"] as string);
         set => ApplicationData.Current.LocalSettings.Values["TemplateOptions"] = value.ToJson();
     }
+    // The paper a new note starts on when none is picked from the New page menu.
+    public NoteTemplate DefaultTemplate
+    {
+        get => ApplicationData.Current.LocalSettings.Values["DefaultTemplate"] is int value && Enum.IsDefined((NoteTemplate)value)
+            ? (NoteTemplate)value : NoteTemplate.None;
+        set => ApplicationData.Current.LocalSettings.Values["DefaultTemplate"] = (int)value;
+    }
+    // The paper color a new note starts with.
+    public NoteColor DefaultPaper
+    {
+        get => ApplicationData.Current.LocalSettings.Values["DefaultPaper"] is int value && Enum.IsDefined((NoteColor)value)
+            ? (NoteColor)value : NoteColor.Default;
+        set => ApplicationData.Current.LocalSettings.Values["DefaultPaper"] = (int)value;
+    }
     // What the mouse and touch do on the canvas, shared by the popup and every sticky note.
     public InputTool MouseTool
     {
@@ -211,12 +225,12 @@ public partial class App : Application
         EnsureFlyout().ShowSettings();
     }
 
-    public async Task CreateNoteAsync(NoteTemplate template = NoteTemplate.None)
+    public async Task CreateNoteAsync(NoteTemplate? template = null)
     {
         if (_exitPending)
             return;
         _tray?.CloseFlyout();
-        await EnsureFlyout().NewPageAsync(template);
+        await EnsureFlyout().NewPageAsync(template ?? DefaultTemplate);
     }
 
     public async Task OpenNoteAsync(Note note)
@@ -284,7 +298,7 @@ public partial class App : Application
     {
         RectInt32 near = WindowPlacementService.NearTray(400, 480);
         int cascade = _stickies.Count % 8 * 32;
-        OpenSticky(new Note(), new RectInt32(near.X - cascade, near.Y - cascade, near.Width, near.Height), draft: true);
+        OpenSticky(new Note { Paper = DefaultPaper }, new RectInt32(near.X - cascade, near.Y - cascade, near.Width, near.Height), draft: true);
     }
 
     private void ShowStickies()
