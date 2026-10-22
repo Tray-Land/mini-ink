@@ -5,7 +5,7 @@ using System.Text.Json.Serialization;
 namespace MiniInk;
 
 // The printed paper a page starts on. Its lines sit behind the ink and text rather than
-// being part of them, so they are never erased, selected, moved, or drawn in thumbnails.
+// being part of them, so they are never erased, selected, or moved, and a thumbnail draws them apart from the ink.
 [JsonConverter(typeof(JsonStringEnumConverter<NoteTemplate>))]
 public enum NoteTemplate
 {
@@ -20,7 +20,7 @@ public enum NoteTemplate
 }
 
 // The color of a note's paper. Default follows the theme like the rest of the window; the others
-// are sticky note colors, bright on a light theme and deeper on a dark one so the ink still shows.
+// are bright sticky note colors, which are light pages with dark ink even in the dark theme.
 [JsonConverter(typeof(JsonStringEnumConverter<NoteColor>))]
 public enum NoteColor
 {

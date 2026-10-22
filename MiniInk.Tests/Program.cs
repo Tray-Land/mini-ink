@@ -1,6 +1,7 @@
 using System.Globalization;
 using System.Numerics;
 using System.Text.Json;
+using System.Text.RegularExpressions;
 using MiniInk;
 
 int assertions = 0;
@@ -28,13 +29,35 @@ Assert(note.Matches(" \t\n"), "Blank searches must return all notes.");
 Assert(!new Note().Matches("empty page"), "Empty-state captions must not be indexed.");
 Assert(new Note { InkBase64 = "AA==", StrokeCount = 0 }.Preview.StartsWith("An empty page"), "Empty ISF data must not look like an ink note.");
 
-Assert(InkThumbnail.Create([]) == "" && InkThumbnail.Create([[]]) == "", "No ink draws no thumbnail.");
+Assert(InkThumbnail.Create([]) == "" && InkThumbnail.Create([new ThumbnailStroke([])]) == "", "No ink draws no thumbnail.");
 Vector2[] line = Enumerable.Range(0, 201).Select(x => new Vector2(100 + x, 100)).ToArray();
-string sketch = InkThumbnail.Create([line, [new Vector2(200, 140)]]);
-Assert(sketch.StartsWith("M1,17.8L") && sketch.EndsWith("63,17.8M32,30.2L32,30.2"),
+string sketch = InkThumbnail.Create([new ThumbnailStroke(line), new ThumbnailStroke([new Vector2(200, 140)])]);
+Assert(sketch.StartsWith("pFF000000|M1,17.8L") && sketch.EndsWith("63,17.8M32,30.2L32,30.2"),
     "Large ink is scaled to fit the thumbnail, centered, with a dot drawn as a line of no length.");
 Assert(sketch.Split(' ').Length < 80, "Points too close together to show are dropped.");
-Assert(InkThumbnail.Create([[new Vector2(500, 500), new Vector2(510, 510)]]) == "M27,19L37,29", "Small ink keeps its size, centered.");
+Assert(InkThumbnail.Create([new ThumbnailStroke([new Vector2(500, 500), new Vector2(510, 510)])]) == "pFF000000|M27,19L37,29", "Small ink keeps its size, centered.");
+
+const uint Red = 0xFFE61B1B, Yellow = 0xFFFFE600;
+Vector2[] diagonal = [new(110, 105), new(130, 130)];
+string colored = InkThumbnail.Create([new ThumbnailStroke(line, Red), new ThumbnailStroke(diagonal), new ThumbnailStroke(line, Yellow, Highlighter: true),
+    new ThumbnailStroke(diagonal, Red)]);
+ThumbnailInk[] runs = [.. InkThumbnail.Parse(colored)];
+Assert(runs.Select(r => (r.Color, r.Highlighter)).SequenceEqual([(Yellow, true), (Red, false), (InkThumbnail.Black, false)]),
+    "Ink is drawn a run for each color, with highlighters first so pen ink lies over them.");
+Assert(runs[1].Path.Count(c => c == 'M') == 2 && runs[2].Path.Count(c => c == 'M') == 1 && runs.All(r => r.Path.StartsWith('M')),
+    "Strokes of a color share a run, in the order they were drawn, and are fitted to the thumbnail together.");
+Assert(runs[0].Path.Split('L')[0] == runs[1].Path.Split('L')[0] && runs[0].Path.StartsWith("M1,") && runs[2].Path.Split('L')[0] != runs[0].Path.Split('L')[0],
+    "Every color is placed by the same fit, so the colors line up as they were drawn.");
+Assert(InkThumbnail.Parse(colored).Select(r => r.IsPageInk).SequenceEqual([false, false, true]) &&
+    new ThumbnailInk("M0,0L1,1", InkThumbnail.White, false).IsPageInk && !new ThumbnailInk("M0,0L1,1", InkThumbnail.Black, true).IsPageInk,
+    "Black and white pens are the page's ink; colors, and highlighters of any color, are drawn as they were.");
+Assert(InkThumbnail.IsLegacy("M1,2L3,4") && !InkThumbnail.IsLegacy(colored) && !InkThumbnail.IsLegacy("") &&
+    InkThumbnail.NeedsDrawing("") && InkThumbnail.NeedsDrawing("M1,2L3,4") && !InkThumbnail.NeedsDrawing(colored),
+    "A note needs a thumbnail drawn when it has none, or one from before ink kept its colors.");
+Assert(InkThumbnail.Parse("M1,2L3,4").Single() == new ThumbnailInk("M1,2L3,4", InkThumbnail.Black, false) && InkThumbnail.Parse("").Count == 0,
+    "A legacy thumbnail is one run of page ink.");
+Assert(InkThumbnail.Parse("pZZZZZZZZ|M1,1;q00000000|M1,1;pFF000000M1,1;pFF000000|;" + "hFF00AACC|M2,2L3,3").Single() ==
+    new ThumbnailInk("M2,2L3,3", 0xFF00AACC, true), "Runs that can't be read are left out, not guessed at.");
 
 DateTimeOffset now = DateTimeOffset.UtcNow;
 Note newest = new() { Updated = now };
@@ -73,6 +96,100 @@ Assert(InputTools.Parse(1, InputTool.Text) == InputTool.Draw, "A saved tool must
 Assert(InputTools.Parse(9, InputTool.Select) == InputTool.Select && InputTools.Parse("Draw", InputTool.Text) == InputTool.Text,
     "An unknown saved tool falls back to the default.");
 
+Assert(PopupSize.Width(null) == PopupSize.DefaultWidth && PopupSize.Height(null) == PopupSize.DefaultHeight &&
+    PopupSize.Width("wide") == PopupSize.DefaultWidth && PopupSize.Height(6.5) == PopupSize.DefaultHeight,
+    "With no usable saved size the popup opens at its default size.");
+Assert(PopupSize.Width(520) == 520 && PopupSize.Height(700) == 700, "A saved size must be read back.");
+Assert(PopupSize.Width(10) == PopupSize.MinWidth && PopupSize.Height(10) == PopupSize.MinHeight &&
+    PopupSize.Width(99999) == PopupSize.MaxWidth && PopupSize.Height(99999) == PopupSize.MaxHeight,
+    "A saved size too small to use, or too large to show, is held to the limits.");
+Assert(PopupSize.Width(PopupSize.DefaultWidth) == PopupSize.DefaultWidth && PopupSize.Height(PopupSize.DefaultHeight) == PopupSize.DefaultHeight,
+    "The default size must be within the limits.");
+Assert(PopupSize.FromPixels(440, 96) == 440 && PopupSize.FromPixels(550, 120) == 440 && PopupSize.FromPixels(660, 144) == 440 &&
+    PopupSize.FromPixels(1240, 200) == 595 && PopupSize.FromPixels(440, 0) == 440,
+    "A window's pixels become the logical size it is saved as, at any display scale.");
+
+PenSet pens = PenSet.Default;
+Assert(pens.Pens.Select(pen => pen.Kind).SequenceEqual(PenKinds.All) && pens.IsValid && pens.Active == pens.Pens[0],
+    "A new install starts with one of each pen, the first in hand.");
+PenSet withSecond = pens.Add(PenKind.Ballpoint);
+Assert(withSecond.Pens.Length == 4 && withSecond.Label(withSecond.Pens[3]) == "Pen 2" && withSecond.Label(withSecond.Pens[0]) == "Pen",
+    "A second pen of a kind is added at the end, and numbered.");
+PenSet removed = withSecond.Remove(withSecond.Pens[0].Id);
+Assert(removed.Pens.Select(pen => pen.Kind).SequenceEqual([PenKind.Pencil, PenKind.Highlighter, PenKind.Ballpoint]) &&
+    removed.Pens[2].Id == withSecond.Pens[3].Id && removed.Label(removed.Pens[2]) == "Pen",
+    "Removing a pen leaves the rest where they were, and the next of its kind is no longer numbered.");
+PenSet missing = pens.Remove(pens.Pens[0].Id).Remove(pens.Pens[1].Id);
+Assert(missing.Pens.Length == 1 && missing.Add(PenKind.Ballpoint).Pens.Select(pen => pen.Kind).SequenceEqual([PenKind.Highlighter, PenKind.Ballpoint]),
+    "A pen goes on the end, whatever its kind.");
+PenSet full = withSecond.Add(PenKind.Pencil);
+Assert(full.Pens.Length == PenSet.MaxPens && !full.CanAdd && ReferenceEquals(full.Add(PenKind.Pencil), full), "A toolbar holds only so many pens.");
+PenSet down = full.Activate(full.Pens[2].Id).Remove(full.Pens[2].Id);
+Assert(down.Pens.Length == 4 && down.Active == down.Pens[0], "Removing the pen in hand picks up the first.");
+Assert(down.Remove(down.Pens[1].Id).Active == down.Pens[0] && down.Remove(down.Pens[0].Id).Pens.Length == 3,
+    "Removing another pen leaves the rest in order.");
+PenSet lone = pens.Remove(pens.Pens[1].Id).Remove(pens.Pens[2].Id);
+Assert(lone.Pens.Length == 1 && !lone.CanRemove && ReferenceEquals(lone.Remove(lone.Pens[0].Id), lone), "The last pen can't be removed.");
+PenSpec red = pens.Pens[0] with { Color = 0xFFE81123, Size = 4 };
+PenSet recolored = pens.Replace(red);
+Assert(recolored.Pens[0] == red && recolored.SameTools(pens) && !recolored.SameAs(pens) && ReferenceEquals(recolored.Replace(red), recolored),
+    "Recoloring a pen changes it in place without changing the tools.");
+Assert(!full.SameTools(pens) && pens.SameAs(pens) && !pens.Activate(pens.Pens[1].Id).SameAs(pens), "Adding a pen changes the tools; picking one up does not.");
+
+string[] ids = [.. full.Pens.Select(pen => pen.Id)];
+PenSet moved = full.Activate(ids[3]).Move(ids[0], 2);
+Assert(moved.Pens.Select(pen => pen.Id).SequenceEqual([ids[1], ids[2], ids[0], ids[3], ids[4]]) && moved.IsValid && moved.Active.Id == ids[3] &&
+    moved.Move(ids[0], moved.IndexOf(ids[0]) - 1).Pens.Select(pen => pen.Id).SequenceEqual([ids[1], ids[0], ids[2], ids[3], ids[4]]) &&
+    moved.Move(ids[4], 0).Pens[0].Id == ids[4],
+    "A pen moves to any place, one step at a time or in one go, and the rest keep their order and the pen in hand.");
+Assert(ReferenceEquals(full.Move(ids[0], -1), full) && ReferenceEquals(full.Move(ids[4], 5), full) && ReferenceEquals(full.Move(ids[2], 2), full) &&
+    ReferenceEquals(full.Move("not a pen", 1), full) && !moved.SameTools(full) && !moved.SameAs(full),
+    "Moving a pen past either end, to where it is, or a pen that is not there, changes nothing; moving one anywhere else changes the tools.");
+PenSet renumbered = withSecond.Move(withSecond.Pens[3].Id, 0);
+Assert(renumbered.Label(renumbered.Pens[0]) == "Pen" && renumbered.Label(renumbered.Pens[1]) == "Pen 2" && renumbered.Pens[0].Id == withSecond.Pens[3].Id,
+    "Pens of a kind are numbered in the order they are in.");
+Assert(PenSet.Parse(moved.ToJson()).Pens.Select(pen => pen.Id).SequenceEqual(moved.Pens.Select(pen => pen.Id)),
+    "The order the pens were put in is remembered, not put back in the order of their kinds.");
+
+PenSet kept = PenSet.Parse(pens.Replace(red).Add(PenKind.Highlighter).Activate(pens.Pens[1].Id).ToJson());
+Assert(kept.Pens.Length == 4 && kept.Pens[0] == red && kept.Active.Kind == PenKind.Pencil && kept.Pens[3].Color is null,
+    "Pens keep their color, size and order, and the one in hand, through saving.");
+Assert(PenSet.Parse(null).Pens.Length == 3 && PenSet.Parse("{broken").Pens.Length == 3 && PenSet.Parse("{\"Pens\":[]}").Pens.Length == 3 &&
+    PenSet.Parse("{\"Pens\":[{\"Id\":\"a\",\"Kind\":\"Laser\"}]}").Pens.Length == 3 &&
+    PenSet.Parse("{\"Pens\":[{\"Id\":\"a\",\"Kind\":\"Pencil\",\"Size\":-1}]}").Pens.Length == 3 &&
+    PenSet.Parse("{\"Pens\":[{\"Id\":\"a\",\"Kind\":\"Pencil\"},{\"Id\":\"a\",\"Kind\":\"Pencil\"}]}").Pens.Length == 3,
+    "Saved pens that can't be used fall back to the defaults.");
+Assert(PenSet.Parse("{\"Pens\":[{\"Id\":\"a\",\"Kind\":\"Pencil\"}],\"ActiveId\":\"gone\"}").Active.Id == "a",
+    "A pen in hand that no longer exists is replaced by the first.");
+
+string? remembered = null;
+List<PenChange> changes = [];
+PenStore session = new(() => remembered, json => remembered = json);
+session.Changed += (_, change) => changes.Add(change);
+Assert(session.Current.Pens.Select(pen => pen.Kind).SequenceEqual(PenKinds.All) && remembered is null, "With nothing saved, the first session starts on the defaults without writing.");
+object window = new();
+session.Edit(set => set.Replace(set.Pens[0] with { Color = 0xFF0063B1, Size = 3.5 }), window);
+session.Edit(set => set.Replace(set.Pens[0] with { Color = 0xFF0063B1, Size = 3.5 }), window);
+Assert(changes.Count == 1 && !changes[0].ToolsChanged && ReferenceEquals(changes[0].Source, window) && remembered is not null,
+    "A pen recolored is saved once and reported as a repaint from the toolbar that did it.");
+session.Edit(set => set.Add(PenKind.Pencil));
+session.Edit(set => set.Activate(set.Pens[3].Id), window);
+Assert(changes.Count == 3 && changes[1].ToolsChanged && changes[1].Source is null && !changes[2].ToolsChanged, "Adding a pen is reported as new tools.");
+PenStore nextSession = new(() => remembered, json => remembered = json);
+Assert(nextSession.Current.SameAs(session.Current) && nextSession.Current.Pens[0].Color == 0xFF0063B1 && nextSession.Current.Pens[0].Size == 3.5 &&
+    nextSession.Current.Active.Kind == PenKind.Pencil && nextSession.Current.Pens.Length == 4,
+    "The next session starts with the same pens, colors, sizes and pen in hand.");
+session.Edit(set => set.Remove("not a pen"));
+session.Edit(_ => new PenSet());
+Assert(changes.Count == 3, "Edits that change nothing, or would leave no pens, are ignored.");
+session.Reset();
+Assert(changes.Count == 4 && changes[3].ToolsChanged && PenSet.Parse(remembered).Pens.Length == 3 && PenSet.Parse(remembered).Pens[0].Color is null,
+    "Resetting puts back the default pens.");
+string firstId = session.Current.Pens[0].Id;
+session.Edit(set => set.Move(firstId, 1));
+Assert(changes.Count == 5 && changes[4].ToolsChanged && session.Current.Pens[1].Id == firstId && PenSet.Parse(remembered).Pens[1].Id == firstId,
+    "Moving a pen is reported as new tools and remembered.");
+
 CultureInfo us = CultureInfo.GetCultureInfo("en-US"), uk = CultureInfo.GetCultureInfo("en-GB");
 DateTime thursday = new(2026, 10, 22);
 Note blank = NoteTemplates.Create(NoteTemplate.None, thursday, us);
@@ -82,6 +199,17 @@ Note pink = NoteTemplates.Create(NoteTemplate.Lined, thursday, us, paper: NoteCo
 Assert(blank.Paper == NoteColor.Default && pink.Paper == NoteColor.Pink, "A page is made on the paper color asked for.");
 Assert(JsonSerializer.Deserialize(JsonSerializer.Serialize(pink, NoteJsonContext.Default.Note), NoteJsonContext.Default.Note)?.Paper == NoteColor.Pink &&
     JsonSerializer.Deserialize("{}", NoteJsonContext.Default.Note)?.Paper == NoteColor.Default, "Paper color round-trips, and older notes have none.");
+TemplateSketch[] papers = Enum.GetValues<NoteTemplate>().Where(t => t != NoteTemplate.None).Select(t => TemplateThumbnail.Create(t)).ToArray();
+Assert(TemplateThumbnail.Create(NoteTemplate.None) == new TemplateSketch("", "") && papers.All(p => p.Faint.Length + p.Strong.Length > 0),
+    "A blank page has no paper in its thumbnail, and every template has some.");
+Assert(papers.Select(p => (p.Faint, p.Strong)).Distinct().Count() == papers.Length, "Each template's paper looks different in the library.");
+Assert(papers.All(p => Regex.Matches(p.Faint + p.Strong, @"\d+").All(n => int.Parse(n.Value) <= TemplateThumbnail.Width)),
+    "A thumbnail's paper stays within its tile.");
+Assert(TemplateThumbnail.Create(NoteTemplate.Dots).Faint == "" && TemplateThumbnail.Create(NoteTemplate.Lined).Strong.Length > 0 &&
+    TemplateThumbnail.Create(NoteTemplate.Grid).Strong == "", "Dots and dividers are strong marks, and rules are faint ones.");
+TemplateSketch[] graphs = Enum.GetValues<GraphOrigin>().Select(o => TemplateThumbnail.Create(NoteTemplate.Graph, new TemplateOptions { GraphOrigin = o })).ToArray();
+Assert(graphs.Select(g => g.Strong).Distinct().Count() == 4 && graphs[3].Strong == "" && TemplateThumbnail.Create(NoteTemplate.Graph) == graphs[0],
+    "A graph's axes cross where the page's do, are left off when it has none, and cross at the center for pages made before the choice.");
 Note week = NoteTemplates.Create(NoteTemplate.Week, thursday, us);
 Assert(week.Template == NoteTemplate.Week && week.Title == "Week of October 18" &&
     NoteTemplates.Create(NoteTemplate.Week, thursday, uk).Title == "Week of 19 October",
@@ -234,11 +362,22 @@ try
     await store.LoadAsync();
     Assert(store.Find(legacy.Id) is { Thumbnail: "" } && !store.Find(legacy.Id)!.Matches("Alice"),
         "Notes saved with recognized handwriting still load, without it.");
-    await store.AddThumbnailsAsync([(legacy.Id, "stale ink", "M0,0L1,1"), (legacy.Id, legacy.InkBase64, "M1,1L2,2")]);
+    await store.AddThumbnailsAsync([(legacy.Id, "stale ink", "pFF000000|M0,0L1,1"), (legacy.Id, legacy.InkBase64, "pFF000000|M1,1L2,2")]);
     store.Unload();
     await store.LoadAsync();
-    Assert(store.Find(legacy.Id) is { Thumbnail: "M1,1L2,2" } drawn && drawn.Updated == legacy.Updated,
+    Assert(store.Find(legacy.Id) is { Thumbnail: "pFF000000|M1,1L2,2" } drawn && drawn.Updated == legacy.Updated,
         "A missing thumbnail is filled in from the ink it was drawn from, keeping the note's date.");
+    await store.AddThumbnailsAsync([(legacy.Id, legacy.InkBase64, "pFFE61B1B|M9,9L9,9")]);
+    Assert(store.Find(legacy.Id)?.Thumbnail == "pFF000000|M1,1L2,2", "A thumbnail that already has its colors is not drawn again.");
+    Note faded = new() { Title = "Before colors", InkBase64 = note.InkBase64, Thumbnail = "M3,3L4,4", Updated = now.AddDays(-10) };
+    await File.WriteAllTextAsync(Path.Combine(folder, $"{faded.Id:N}.json"), JsonSerializer.Serialize(faded, NoteJsonContext.Default.Note));
+    store.Unload();
+    await store.LoadAsync();
+    await store.AddThumbnailsAsync([(faded.Id, faded.InkBase64, "pFFE61B1B|M5,5L6,6")]);
+    store.Unload();
+    await store.LoadAsync();
+    Assert(store.Find(faded.Id) is { Thumbnail: "pFFE61B1B|M5,5L6,6" } colored2 && colored2.Updated == faded.Updated,
+        "A thumbnail drawn before ink kept its colors is drawn again, keeping the note's date.");
 
     StickyLayoutStore layout = new(Path.Combine(folder, "StickyNotes.json"));
     Assert(layout.Load().Count == 0, "A missing layout means no sticky windows.");
@@ -258,4 +397,4 @@ finally
         File.Delete(path);
     Directory.Delete(folder);
 }
-Console.WriteLine($"PASS: {assertions} search, thumbnail, stack, input tool, template, sticky layout, persistence and corruption assertions.");
+Console.WriteLine($"PASS: {assertions} search, thumbnail, stack, input tool, popup size, pen, template, sticky layout, persistence and corruption assertions.");

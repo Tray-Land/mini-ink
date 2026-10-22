@@ -11,7 +11,10 @@
     <Compile Include="..\MiniInk\NoteStack.cs" Link="NoteStack.cs"/>
     <Compile Include="..\MiniInk\StickyLayout.cs" Link="StickyLayout.cs"/>
     <Compile Include="..\MiniInk\InputTools.cs" Link="InputTools.cs"/>
+    <Compile Include="..\MiniInk\PopupSize.cs" Link="PopupSize.cs"/>
+    <Compile Include="..\MiniInk\Pens.cs" Link="Pens.cs"/>
     <Compile Include="..\MiniInk\NoteTemplates.cs" Link="NoteTemplates.cs"/>
     <Compile Include="..\MiniInk\InkThumbnail.cs" Link="InkThumbnail.cs"/>
+    <Compile Include="..\MiniInk\TemplateThumbnail.cs" Link="TemplateThumbnail.cs"/>
   </ItemGroup>
 </Project>

@@ -12,6 +12,12 @@ public sealed partial class MainPage : Page
     {
         InitializeComponent();
         NewNoteButton.Flyout = TemplateMenu.Create();
+        // Black and white ink is drawn in the page's, so the tiles are made again when the theme changes.
+        ActualThemeChanged += (_, _) =>
+        {
+            if (_visible)
+                Refresh();
+        };
     }
 
     public async void OnShown()
@@ -40,12 +46,12 @@ public sealed partial class MainPage : Page
         await DrawMissingThumbnailsAsync();
     }
 
-    // Notes saved before thumbnails were kept get theirs drawn from their ink, once each.
+    // Notes saved before thumbnails were kept, or before they kept the colors of the ink, get theirs drawn from their ink, once each.
     private readonly HashSet<Guid> _drawn = [];
     private async Task DrawMissingThumbnailsAsync()
     {
         List<(Guid, string, string)> thumbnails = [];
-        foreach (Note note in App.Current.Notes.All.Where(n => n.Thumbnail.Length == 0 && n.StrokeCount != 0 && n.InkBase64.Length > 0))
+        foreach (Note note in App.Current.Notes.All.Where(n => InkThumbnail.NeedsDrawing(n.Thumbnail) && n.StrokeCount != 0 && n.InkBase64.Length > 0))
         {
             if (_drawn.Add(note.Id))
                 thumbnails.Add((note.Id, note.InkBase64, await InkThumbnail.FromInkAsync(note.InkBase64)));
@@ -71,7 +77,7 @@ public sealed partial class MainPage : Page
     private void Refresh()
     {
         LibraryItem[] matches = App.Current.Notes.All.Where(n => n.Matches(Search.Text ?? ""))
-            .Select(n => new LibraryItem(n, App.Current.IsOnDesktop(n.Id))).ToArray();
+            .Select(n => new LibraryItem(n, App.Current.IsOnDesktop(n.Id), ActualTheme)).ToArray();
         NotesList.ItemsSource = matches;
         Empty.Visibility = matches.Length == 0 ? Visibility.Visible : Visibility.Collapsed;
         Empty.Text = string.IsNullOrWhiteSpace(Search.Text) ? "No notes yet. Capture your first idea." : "No matching notes.";
@@ -135,11 +141,19 @@ public sealed partial class MainPage : Page
     private void Settings_Click(object sender, RoutedEventArgs e) => App.Current.ShowSettings();
 }
 
-public sealed record LibraryItem(Note Note, bool OnDesktop)
+// Theme is the one the library is shown in, which the pages of the theme's own color follow.
+public sealed record LibraryItem(Note Note, bool OnDesktop, ElementTheme Theme)
 {
     public string Title => Note.Title;
     public string Preview => Note.Preview;
     public string DateLabel => OnDesktop ? $"{Note.DateLabel} - on your desktop" : Note.DateLabel;
-    public Geometry? Sketch => InkThumbnail.ToGeometry(Note.Thumbnail);
+    // A sticky color is a light page whatever the theme, so its ink and rules go dark over it.
+    public ElementTheme PageTheme => Note.Paper == NoteColor.Default ? ElementTheme.Default : ElementTheme.Light;
+    public InkLayer[] Ink { get; } = InkThumbnail.Layers(Note.Thumbnail, Note.Paper == NoteColor.Default ? Theme : ElementTheme.Light);
+    private TemplateSketch Rules { get; } = TemplateThumbnail.Create(Note.Template, Note.Options);
+    public Geometry? FaintRules => InkThumbnail.ToGeometry(Rules.Faint);
+    public Geometry? StrongRules => InkThumbnail.ToGeometry(Rules.Strong);
+    // Null for the theme's own page color.
+    public Brush? PaperBrush => NoteColors.Paper(Note.Paper) is Windows.UI.Color color ? new SolidColorBrush(color) : null;
     public override string ToString() => Note.Title;
 }

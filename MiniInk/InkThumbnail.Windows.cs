@@ -2,6 +2,7 @@ using System.Diagnostics;
 using System.Numerics;
 using System.Runtime.InteropServices;
 using System.Runtime.InteropServices.WindowsRuntime;
+using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Markup;
 using Microsoft.UI.Xaml.Media;
 using Windows.Storage.Streams;
@@ -9,8 +10,14 @@ using Windows.UI.Input.Inking;
 
 namespace MiniInk;
 
+// One run of ink as the library draws it.
+public sealed record InkLayer(Geometry? Data, Brush Stroke, double Thickness, double Opacity);
+
 public static partial class InkThumbnail
 {
+    // A highlighter is a broad translucent line under the pens.
+    private const double PenThickness = 1.25, HighlighterThickness = 5, HighlighterOpacity = 0.5;
+
     // Drawn from saved ink on a worker thread, so a large note never stalls the window.
     // Ink that can't be read gets no thumbnail; opening the note reports why.
     public static Task<string> FromInkAsync(string inkBase64) => Task.Run(async () =>
@@ -23,9 +30,12 @@ public static partial class InkThumbnail
             InkStrokeContainer ink = new();
             await ink.LoadAsync(stream);
             // Points are kept as drawn; moving a stroke only changes its transform.
-            return Create(ink.GetStrokes().Select(stroke => (IReadOnlyList<Vector2>)stroke.GetInkPoints()
-                .Select(p => Vector2.Transform(new Vector2((float)p.Position.X, (float)p.Position.Y), stroke.PointTransform))
-                .ToArray()));
+            return Create(ink.GetStrokes().Select(stroke => new ThumbnailStroke(
+                stroke.GetInkPoints()
+                    .Select(p => Vector2.Transform(new Vector2((float)p.Position.X, (float)p.Position.Y), stroke.PointTransform))
+                    .ToArray(),
+                PenToolbar.ToArgb(stroke.DrawingAttributes.Color),
+                stroke.DrawingAttributes.DrawAsHighlighter)));
         }
         catch (Exception ex) when (ex is COMException or ArgumentException or FormatException or InvalidCastException)
         {
@@ -33,6 +43,13 @@ public static partial class InkThumbnail
             return "";
         }
     });
+
+    // Black and white pens are drawn in the ink the page shows now; every other color is the one it was drawn in.
+    public static InkLayer[] Layers(string thumbnail, ElementTheme pageTheme) => Parse(thumbnail).Select(ink => new InkLayer(
+        ToGeometry(ink.Path),
+        new SolidColorBrush(ink.IsPageInk ? PenToolbar.InkFor(pageTheme) : PenToolbar.ToColor(ink.Color)),
+        ink.Highlighter ? HighlighterThickness : PenThickness,
+        ink.Highlighter ? HighlighterOpacity : 1)).ToArray();
 
     public static Geometry? ToGeometry(string thumbnail)
     {

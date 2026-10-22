@@ -84,13 +84,34 @@
                                 <ColumnDefinition Width="*"/>
                                 <ColumnDefinition Width="Auto"/>
                             </Grid.ColumnDefinitions>
-                            <!-- The ink in miniature, sized to InkThumbnail's 64 by 48 drawing. -->
-                            <Border Grid.RowSpan="3" Width="72" Height="56" Padding="3" CornerRadius="4" BorderThickness="1"
+                            <!-- The page in miniature: its color and printed paper, with the ink on top. The paper is
+                                 sized to TemplateThumbnail's 70 by 54 tile, the ink to InkThumbnail's 64 by 48 drawing. -->
+                            <Border Grid.RowSpan="3" Width="72" Height="56" CornerRadius="4" BorderThickness="1"
                                     VerticalAlignment="Center" Background="{ThemeResource LayerFillColorDefaultBrush}"
                                     BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}">
-                                <Path Data="{x:Bind Sketch, Mode=OneTime}" Width="64" Height="48" StrokeThickness="1.25"
-                                      Stroke="{ThemeResource TextFillColorPrimaryBrush}" StrokeLineJoin="Round"
-                                      StrokeStartLineCap="Round" StrokeEndLineCap="Round"/>
+                                <Grid CornerRadius="3" Background="{x:Bind PaperBrush, Mode=OneTime}"
+                                      RequestedTheme="{x:Bind PageTheme, Mode=OneTime}">
+                                    <Path Data="{x:Bind FaintRules, Mode=OneTime}" Width="70" Height="54" StrokeThickness="1"
+                                          Stroke="{ThemeResource TextFillColorPrimaryBrush}" Opacity="0.2"/>
+                                    <Path Data="{x:Bind StrongRules, Mode=OneTime}" Width="70" Height="54" StrokeThickness="1"
+                                          Stroke="{ThemeResource TextFillColorPrimaryBrush}" Opacity="0.45" StrokeLineJoin="Round"
+                                          StrokeStartLineCap="Round" StrokeEndLineCap="Round"/>
+                                    <!-- A path for each color of ink, laid over one another. -->
+                                    <ItemsControl ItemsSource="{x:Bind Ink, Mode=OneTime}" Width="64" Height="48" IsTabStop="False"
+                                                  IsHitTestVisible="False" AutomationProperties.AccessibilityView="Raw">
+                                        <ItemsControl.ItemsPanel>
+                                            <ItemsPanelTemplate><Grid/></ItemsPanelTemplate>
+                                        </ItemsControl.ItemsPanel>
+                                        <ItemsControl.ItemTemplate>
+                                            <DataTemplate x:DataType="local:InkLayer">
+                                                <Path Data="{x:Bind Data, Mode=OneTime}" Stroke="{x:Bind Stroke, Mode=OneTime}"
+                                                      StrokeThickness="{x:Bind Thickness, Mode=OneTime}"
+                                                      Opacity="{x:Bind Opacity, Mode=OneTime}" Width="64" Height="48" StrokeLineJoin="Round"
+                                                      StrokeStartLineCap="Round" StrokeEndLineCap="Round"/>
+                                            </DataTemplate>
+                                        </ItemsControl.ItemTemplate>
+                                    </ItemsControl>
+                                </Grid>
                             </Border>
                             <TextBlock Grid.Column="1" Text="{x:Bind Title, Mode=OneTime}" FontWeight="SemiBold"/>
                             <TextBlock Grid.Column="1" Grid.Row="1" Text="{x:Bind Preview, Mode=OneTime}" TextTrimming="CharacterEllipsis"

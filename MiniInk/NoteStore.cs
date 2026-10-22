@@ -86,8 +86,8 @@ public sealed class NoteStore(string folder)
         Changed?.Invoke(this, EventArgs.Empty);
     }
 
-    // Notes saved before thumbnails were kept get one drawn later from their ink. It is
-    // dropped if the note was saved again meanwhile, and the note keeps its date.
+    // Notes saved before thumbnails were kept, or before they kept the colors of the ink, get one
+    // drawn later from their ink. It is dropped if the note was saved again meanwhile, and the note keeps its date.
     public async Task AddThumbnailsAsync(IEnumerable<(Guid Id, string Ink, string Thumbnail)> thumbnails)
     {
         bool added = false;
@@ -96,7 +96,8 @@ public sealed class NoteStore(string folder)
         {
             foreach ((Guid id, string ink, string thumbnail) in thumbnails)
             {
-                if (thumbnail.Length == 0 || _notes.GetValueOrDefault(id) is not { Thumbnail: "" } note || note.InkBase64 != ink)
+                if (thumbnail.Length == 0 || _notes.GetValueOrDefault(id) is not { } note || note.InkBase64 != ink ||
+                    !InkThumbnail.NeedsDrawing(note.Thumbnail))
                     continue;
                 note.Thumbnail = thumbnail;
                 await WriteAsync(note);
