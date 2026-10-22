@@ -2,6 +2,7 @@
     x:Class="MiniInk.SettingsPage"
     xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:local="using:MiniInk"
     Background="Transparent">
     <Page.Resources>
         <Style x:Key="SectionHeaderStyle" TargetType="TextBlock" BasedOn="{StaticResource BodyStrongTextBlockStyle}">
@@ -74,11 +75,47 @@
                     <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
                     <StackPanel VerticalAlignment="Center">
                         <TextBlock Text="New notes use the color" TextWrapping="Wrap"/>
-                        <TextBlock Text="Brighter in the light theme, deeper in the dark one" Style="{StaticResource CaptionStyle}"/>
+                        <TextBlock Text="Bright sticky note colors, with dark ink, in either theme" Style="{StaticResource CaptionStyle}"/>
                     </StackPanel>
                     <ComboBox x:Name="DefaultPaperChoice" Grid.Column="1" MinWidth="170" VerticalAlignment="Center"
                               SelectionChanged="DefaultPaper_SelectionChanged"
                               AutomationProperties.Name="New notes use the color" AutomationProperties.AutomationId="DefaultPaper"/>
+                </Grid>
+
+                <TextBlock Text="Popup" Style="{StaticResource SectionHeaderStyle}"/>
+                <Grid Style="{StaticResource CardStyle}">
+                    <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                    <StackPanel VerticalAlignment="Center">
+                        <TextBlock Text="Width" TextWrapping="Wrap"/>
+                        <TextBlock Text="Drag the popup's edge to resize it, or set the size it opens at here" Style="{StaticResource CaptionStyle}"/>
+                    </StackPanel>
+                    <NumberBox x:Name="PopupWidthBox" Grid.Column="1" MinWidth="170" VerticalAlignment="Center"
+                               SpinButtonPlacementMode="Inline" SmallChange="20" LargeChange="100" ValueChanged="PopupSize_ValueChanged"
+                               AutomationProperties.Name="Popup width" AutomationProperties.AutomationId="PopupWidth"/>
+                </Grid>
+                <Grid Style="{StaticResource CardStyle}">
+                    <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                    <StackPanel VerticalAlignment="Center">
+                        <TextBlock Text="Height" TextWrapping="Wrap"/>
+                        <TextBlock Text="Limited to what fits on the screen" Style="{StaticResource CaptionStyle}"/>
+                    </StackPanel>
+                    <NumberBox x:Name="PopupHeightBox" Grid.Column="1" MinWidth="170" VerticalAlignment="Center"
+                               SpinButtonPlacementMode="Inline" SmallChange="20" LargeChange="100" ValueChanged="PopupSize_ValueChanged"
+                               AutomationProperties.Name="Popup height" AutomationProperties.AutomationId="PopupHeight"/>
+                </Grid>
+                <Grid Style="{StaticResource CardStyle}">
+                    <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                    <StackPanel VerticalAlignment="Center">
+                        <TextBlock Text="Default size" TextWrapping="Wrap"/>
+                        <TextBlock x:Name="DefaultSizeText" Style="{StaticResource CaptionStyle}"/>
+                    </StackPanel>
+                    <Button Grid.Column="1" Content="Reset" VerticalAlignment="Center" Click="ResetPopupSize_Click"
+                            AutomationProperties.Name="Reset the popup size" AutomationProperties.AutomationId="ResetPopupSize"/>
+                </Grid>
+
+                <TextBlock Text="Pens" Style="{StaticResource SectionHeaderStyle}"/>
+                <Grid Style="{StaticResource CardStyle}" Padding="16,12">
+                    <local:PenSetPanel/>
                 </Grid>
 
                 <TextBlock Text="Planners" Style="{StaticResource SectionHeaderStyle}"/>

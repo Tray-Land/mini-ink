@@ -11,11 +11,13 @@ using Windows.Win32.Foundation;
 using Windows.Win32.Graphics.Dwm;
 using Windows.Win32.UI.WindowsAndMessaging;
 using WinUIEx;
+using WinUIEx.Messaging;
 
 namespace MiniInk;
 
 public sealed partial class TrayFlyoutWindow : WindowEx
 {
+    private const uint WM_EXITSIZEMOVE = 0x0232;
     private readonly HWND _hwnd;
     private readonly MainPage _page = new();
     private SettingsPage? _settingsPage;
@@ -30,6 +32,7 @@ public sealed partial class TrayFlyoutWindow : WindowEx
     private readonly DispatcherQueueTimer _idleClose;
     private readonly DispatcherQueueTimer _animation;
     private readonly Stopwatch _clock = new();
+    private readonly WindowMessageMonitor _messages;
     private bool _visible;
     private bool _closed;
     private bool _allowClose;
@@ -48,7 +51,10 @@ public sealed partial class TrayFlyoutWindow : WindowEx
         _settings.ColorValuesChanged += ColorValuesChanged;
         SystemThemeService.Changed += ThemeChanged;
         OverlappedPresenter presenter = OverlappedPresenter.Create();
-        presenter.IsMaximizable = presenter.IsMinimizable = presenter.IsResizable = false;
+        presenter.IsMaximizable = presenter.IsMinimizable = false;
+        presenter.IsResizable = true;
+        MinWidth = PopupSize.MinWidth;
+        MinHeight = PopupSize.MinHeight;
         presenter.IsAlwaysOnTop = true;
         presenter.SetBorderAndTitleBar(true, false);
         AppWindow.SetPresenter(presenter);
@@ -77,6 +83,9 @@ public sealed partial class TrayFlyoutWindow : WindowEx
         _animation.Tick += Animate;
         Activated += WindowActivated;
         AppWindow.Closing += WindowClosing;
+        _messages = new WindowMessageMonitor(this);
+        _messages.WindowMessageReceived += WindowMessageReceived;
+        App.Current.PopupSizeChanged += PopupSize_Changed;
     }
 
     public void Toggle()
@@ -100,9 +109,7 @@ public sealed partial class TrayFlyoutWindow : WindowEx
             return;
         _dismiss.Stop();
         _idleClose.Stop();
-        WindowPlacementService.PositionNearTray(this, 440, 620);
-        _baseX = AppWindow.Position.X;
-        _baseY = AppWindow.Position.Y;
+        PlacePopup();
         ApplyTheme();
         _visible = true;
         StartAnimation(false);
@@ -110,6 +117,33 @@ public sealed partial class TrayFlyoutWindow : WindowEx
         Activate();
         PInvoke.SetForegroundWindow(_hwnd);
         RestorePage(fresh);
+    }
+    // Beside the tray icon, at the size the popup opens at.
+    private void PlacePopup()
+    {
+        WindowPlacementService.PositionNearTray(this, App.Current.PopupWidth, App.Current.PopupHeight);
+        _baseX = AppWindow.Position.X;
+        _baseY = AppWindow.Position.Y;
+    }
+    // A drag of the popup's edge keeps the size it ended at, and the corner that moved with it.
+    private void WindowMessageReceived(object? sender, WindowMessageEventArgs e)
+    {
+        if (e.Message.MessageId != WM_EXITSIZEMOVE || !_visible || _animation.IsRunning)
+            return;
+        _baseX = AppWindow.Position.X;
+        _baseY = AppWindow.Position.Y;
+        uint dpi = PInvoke.GetDpiForWindow(_hwnd);
+        App.Current.SetPopupSize(PopupSize.FromPixels(AppWindow.Size.Width, dpi), PopupSize.FromPixels(AppWindow.Size.Height, dpi));
+    }
+    // A size set in Settings applies to the open popup at once; one just dragged here is already the window's.
+    private void PopupSize_Changed(object? sender, EventArgs e)
+    {
+        if (!_visible || _animation.IsRunning)
+            return;
+        uint dpi = PInvoke.GetDpiForWindow(_hwnd);
+        if (PopupSize.FromPixels(AppWindow.Size.Width, dpi) != App.Current.PopupWidth ||
+            PopupSize.FromPixels(AppWindow.Size.Height, dpi) != App.Current.PopupHeight)
+            PlacePopup();
     }
     public void HidePopup()
     {
@@ -147,8 +181,7 @@ public sealed partial class TrayFlyoutWindow : WindowEx
             {
                 _restored = true;
                 if (_editor is not { IsBlankPage: true })
-                    await OpenNoteAsync(NoteTemplates.Create(App.Current.DefaultTemplate, DateTime.Now, CultureInfo.CurrentCulture,
-                        App.Current.TemplateOptions, App.Current.DefaultPaper), show: false, draft: true);
+                    await OpenNoteAsync(App.Current.NewPage(), show: false, draft: true);
             }
             else if (!_restored)
             {
@@ -160,7 +193,7 @@ public sealed partial class TrayFlyoutWindow : WindowEx
                 if (active is not null)
                     await OpenNoteAsync(active, show: false);
                 else if (id is not null)
-                    await OpenNoteAsync(new Note { Paper = App.Current.DefaultPaper }, show: false, draft: true);
+                    await OpenNoteAsync(App.Current.NewPage(), show: false, draft: true);
             }
             UpdateStack();
             if (_visible)
@@ -208,8 +241,7 @@ public sealed partial class TrayFlyoutWindow : WindowEx
         {
             if (_closed)
                 return;
-            Note page = NoteTemplates.Create(template, DateTime.Now, CultureInfo.CurrentCulture, App.Current.TemplateOptions,
-                App.Current.DefaultPaper);
+            Note page = App.Current.NewPage(template);
             // An unwritten page is reused when it is already on the paper asked for.
             if (_editor is not { IsBlankPage: true } || _editor.NoteTemplate != template || _editor.Paper != page.Paper ||
                 _editor.TemplateOptions?.Unfitted != page.Options)
@@ -240,7 +272,7 @@ public sealed partial class TrayFlyoutWindow : WindowEx
             {
                 Guid? target = older ? _stack.Older(current) : _stack.Newer(current);
                 Note? next = target is Guid id ? App.Current.Notes.Find(id) : null;
-                ShowEditor(next ?? new Note { Paper = App.Current.DefaultPaper }, draft: next is null);
+                ShowEditor(next ?? App.Current.NewPage(), draft: next is null);
             }
             else
                 UpdateStack();
@@ -267,7 +299,7 @@ public sealed partial class TrayFlyoutWindow : WindowEx
                 return;
             RectInt32 bounds = new(_baseX, _baseY, AppWindow.Size.Width, AppWindow.Size.Height);
             _stack.Retain(id => id != note.Id);
-            ShowEditor(new Note { Paper = App.Current.DefaultPaper }, draft: true);
+            ShowEditor(App.Current.NewPage(), draft: true);
             HidePopup();
             App.Current.OpenSticky(note, bounds, draft: draft);
         }
@@ -405,6 +437,9 @@ public sealed partial class TrayFlyoutWindow : WindowEx
         SystemThemeService.Changed -= ThemeChanged;
         Activated -= WindowActivated;
         AppWindow.Closing -= WindowClosing;
+        App.Current.PopupSizeChanged -= PopupSize_Changed;
+        _messages.WindowMessageReceived -= WindowMessageReceived;
+        _messages.Dispose();
         PageHost.Content = null;
         _allowClose = true;
         Close();

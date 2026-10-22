@@ -41,8 +41,20 @@ public sealed partial class SettingsPage : Page
             1 => "Every square",
             _ => $"Every {every} squares"
         }).ToArray();
+        PopupWidthBox.Minimum = PopupSize.MinWidth;
+        PopupWidthBox.Maximum = PopupSize.MaxWidth;
+        PopupHeightBox.Minimum = PopupSize.MinHeight;
+        PopupHeightBox.Maximum = PopupSize.MaxHeight;
+        DefaultSizeText.Text = $"{PopupSize.DefaultWidth} by {PopupSize.DefaultHeight}";
         VersionText.Text = $"MiniInk {Version}";
-        Loaded += (_, _) => BackButton.Focus(FocusState.Programmatic);
+        // The popup can be resized by its edge while this page shows, so the boxes follow it.
+        Loaded += (_, _) =>
+        {
+            App.Current.PopupSizeChanged -= PopupSize_Changed;
+            App.Current.PopupSizeChanged += PopupSize_Changed;
+            BackButton.Focus(FocusState.Programmatic);
+        };
+        Unloaded += (_, _) => App.Current.PopupSizeChanged -= PopupSize_Changed;
     }
 
     private static string Version
@@ -70,8 +82,32 @@ public sealed partial class SettingsPage : Page
         DefaultPaperChoice.SelectedIndex = Array.IndexOf(NoteColors.All, App.Current.DefaultPaper);
         ShowTemplateOptions(App.Current.TemplateOptions);
         _loading = false;
+        ShowPopupSize();
         ShowStartupState(await StartupService.GetStateAsync());
     }
+
+    private void ShowPopupSize()
+    {
+        _loading = true;
+        PopupWidthBox.Value = App.Current.PopupWidth;
+        PopupHeightBox.Value = App.Current.PopupHeight;
+        _loading = false;
+    }
+
+    private void PopupSize_Changed(object? sender, EventArgs e) => ShowPopupSize();
+
+    // An emptied box gives no number; the other box and the saved size stand until it has one again.
+    private void PopupSize_ValueChanged(NumberBox sender, NumberBoxValueChangedEventArgs e)
+    {
+        if (_loading)
+            return;
+        if (double.IsNaN(PopupWidthBox.Value) || double.IsNaN(PopupHeightBox.Value))
+            return;
+        App.Current.SetPopupSize((int)Math.Round(PopupWidthBox.Value), (int)Math.Round(PopupHeightBox.Value));
+    }
+
+    private void ResetPopupSize_Click(object sender, RoutedEventArgs e) =>
+        App.Current.SetPopupSize(PopupSize.DefaultWidth, PopupSize.DefaultHeight);
 
     private void ShowTemplateOptions(TemplateOptions options)
     {
