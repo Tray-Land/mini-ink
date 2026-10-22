@@ -5,6 +5,7 @@ using Microsoft.UI.Input;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Automation;
 using Microsoft.UI.Xaml.Controls;
+using Microsoft.UI.Xaml.Controls.Primitives;
 using Microsoft.UI.Xaml.Input;
 using Microsoft.UI.Xaml.Media;
 using Microsoft.UI.Xaml.Shapes;
@@ -49,8 +50,9 @@ public sealed partial class EditorPage : Page
     private bool _reselected;
     private InputTool _mouseTool;
     private InputTool _touchTool;
-    private InkToolbar? _penTools;
-    private ElementTheme? _inkTheme;
+    private PenToolbar? _pens;
+    private Flyout? _inputTools;
+    private MenuFlyout? _paperMenu;
 
     public Guid NoteId => _note.Id;
     // A blank page that has not been written to disk yet.
@@ -87,7 +89,7 @@ public sealed partial class EditorPage : Page
         {
             UsePenTools(PenTools);
             NewPageButton.Flyout = TemplateMenu.Create();
-            PaperButton.Flyout = PaperMenu.Create(() => _note.Paper, () => ActualTheme == ElementTheme.Dark, SetPaper);
+            _paperMenu = PaperMenu.Create(() => _note.Paper, SetPaper);
         }
         Ink.InkPresenter.StrokesCollected += (_, _) => InkChanged();
         Ink.InkPresenter.StrokesErased += (_, _) => InkChanged();
@@ -119,8 +121,7 @@ public sealed partial class EditorPage : Page
         ActualThemeChanged += (_, _) =>
         {
             ApplyPaper();
-            UseThemeInk();
-            SyncInk();
+            _pens?.RefreshInk();
             RenderTemplate();
         };
     }
@@ -131,66 +132,38 @@ public sealed partial class EditorPage : Page
             return;
         _note.Paper = color;
         ApplyPaper();
+        _pens?.RefreshInk();
+        RenderTemplate();
         Changed();
     }
 
-    // Sticky colors have a light and a dark shade, so the page follows the theme like its ink does.
+    // A sticky color is a bright page whatever the theme, so the page, with its text, goes light over it.
+    private ElementTheme PageTheme => _note.Paper == NoteColor.Default ? ActualTheme : ElementTheme.Light;
+
     private void ApplyPaper()
     {
-        if (NoteColors.Paper(_note.Paper, ActualTheme == ElementTheme.Dark) is Windows.UI.Color color)
+        if (NoteColors.Paper(_note.Paper) is Windows.UI.Color color)
         {
             PaperColor.Background = new SolidColorBrush(color);
             PaperColor.Visibility = Visibility.Visible;
+            Surface.RequestedTheme = ElementTheme.Light;
         }
         else
+        {
             PaperColor.Visibility = Visibility.Collapsed;
-    }
-
-    public void UsePenTools(InkToolbar tools)
-    {
-        _penTools = tools;
-        tools.TargetInkCanvas = Ink;
-        // The canvas draws with exactly what the toolbar shows.
-        tools.InkDrawingAttributesChanged += (_, _) => SyncInk();
-        tools.Loaded += (_, _) =>
-        {
-            ApplyInputTools();
-            UseThemeInk();
-            SyncInk();
-        };
-    }
-
-    private void SyncInk()
-    {
-        if (_penTools?.InkDrawingAttributes is InkDrawingAttributes attributes)
-            Ink.InkPresenter.UpdateDefaultDrawingAttributes(attributes);
-    }
-
-    // Pens start in ink that shows on the page: white when it is dark, black when it is light.
-    // When the theme changes, a pen still in the old ink follows it; a color picked by hand stays.
-    private void UseThemeInk()
-    {
-        if (_penTools is null)
-            return;
-        Windows.UI.Color? previous = _inkTheme is ElementTheme theme ? ThemeInk(theme) : null;
-        Windows.UI.Color ink = ThemeInk(ActualTheme);
-        _inkTheme = ActualTheme;
-        foreach (InkToolbarTool tool in (InkToolbarTool[])[InkToolbarTool.BallpointPen, InkToolbarTool.Pencil])
-        {
-            if (_penTools.GetToolButton(tool) is not InkToolbarPenButton pen ||
-                previous is Windows.UI.Color old && (pen.SelectedBrush as SolidColorBrush)?.Color != old)
-                continue;
-            int index = pen.Palette.ToList().FindIndex(b => b is SolidColorBrush brush && brush.Color == ink);
-            if (index < 0)
-            {
-                pen.Palette = [new SolidColorBrush(ink), .. pen.Palette];
-                index = 0;
-            }
-            pen.SelectedBrushIndex = index;
+            Surface.RequestedTheme = ElementTheme.Default;
         }
     }
 
-    private static Windows.UI.Color ThemeInk(ElementTheme theme) => theme == ElementTheme.Dark ? Colors.White : Colors.Black;
+    // The toolbar holds the user's pens, as they were left, and draws on this page's canvas.
+    public void UsePenTools(InkToolbar tools)
+    {
+        _pens?.Detach();
+        _pens = new PenToolbar(tools, Ink, App.Current.Pens, () => PageTheme);
+        // Filling the toolbar can reset how the canvas takes input.
+        _pens.Filled += (_, _) => ApplyInputTools();
+        tools.Loaded += (_, _) => ApplyInputTools();
+    }
 
     private void InputTools_Changed(object? sender, EventArgs e) => ApplyInputTools();
 
@@ -396,7 +369,7 @@ public sealed partial class EditorPage : Page
         TemplateLayer.Children.Clear();
         if (_note.Template == NoteTemplate.None)
             return;
-        Windows.UI.Color ink = ThemeInk(ActualTheme);
+        Windows.UI.Color ink = PenToolbar.InkFor(PageTheme);
         SolidColorBrush faint = new(ColorHelper.FromArgb(0x24, ink.R, ink.G, ink.B));
         SolidColorBrush strong = new(ColorHelper.FromArgb(0x50, ink.R, ink.G, ink.B));
         SolidColorBrush label = new(ColorHelper.FromArgb(0x99, ink.R, ink.G, ink.B));
@@ -796,6 +769,7 @@ public sealed partial class EditorPage : Page
         _autosave.Stop();
         _autosave.Tick -= Autosave_Tick;
         App.Current.InputToolsChanged -= InputTools_Changed;
+        _pens?.Detach();
     }
 
     public void ShowError(string message, Exception? ex = null)
@@ -833,6 +807,19 @@ public sealed partial class EditorPage : Page
     }
     private async void TearOff_Click(object sender, RoutedEventArgs e) => await App.Current.TearOffAsync();
     private void Settings_Click(object sender, RoutedEventArgs e) => App.Current.ShowSettings();
+
+    private void InputTools_Click(object sender, RoutedEventArgs e) =>
+        ShowBelowBar(_inputTools ??= new Flyout { Content = new InputToolsPanel() });
+
+    private void PaperColor_Click(object sender, RoutedEventArgs e)
+    {
+        if (_paperMenu is not null)
+            ShowBelowBar(_paperMenu);
+    }
+
+    // Under the bar, at its right end by the overflow button the choice was made from.
+    private void ShowBelowBar(FlyoutBase flyout) =>
+        flyout.ShowAt(Commands, new FlyoutShowOptions { Placement = FlyoutPlacementMode.BottomEdgeAlignedRight });
 
     private async void Delete_Click(object sender, RoutedEventArgs e) => await DeleteSelectedAsync();
 

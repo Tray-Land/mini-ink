@@ -51,4 +51,5 @@ public sealed class TextNote
 
 [JsonSerializable(typeof(Note))]
 [JsonSerializable(typeof(TemplateOptions))]
+[JsonSerializable(typeof(PenSet))]
 internal partial class NoteJsonContext : JsonSerializerContext;

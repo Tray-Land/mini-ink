@@ -24,8 +24,8 @@
                         <StaticResource x:Key="ButtonBorderBrushPointerOver" ResourceKey="SubtleFillColorTransparentBrush"/>
                         <StaticResource x:Key="ButtonBorderBrushPressed" ResourceKey="SubtleFillColorTransparentBrush"/>
                     </StackPanel.Resources>
+                    <!-- Just the eraser is the toolbar's own; the user's pens are added ahead of it in code (see PenToolbar). -->
                     <InkToolbar x:Name="PenTools" InitialControls="None" AutomationProperties.AutomationId="PenTools">
-                        <InkToolbarBallpointPenButton/>
                         <InkToolbarEraserButton/>
                     </InkToolbar>
                     <Button Width="34" Height="32" Padding="0" VerticalAlignment="Center"

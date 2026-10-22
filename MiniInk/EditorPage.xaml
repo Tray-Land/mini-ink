@@ -95,32 +95,35 @@
                 </Style>
             </CommandBar.Resources>
             <CommandBar.Content>
-                <InkToolbar x:Name="PenTools" InitialControls="All" AutomationProperties.AutomationId="PenTools"/>
+                <!-- The eraser and ruler are the toolbar's own; the user's pens are added ahead of them in code (see PenToolbar). -->
+                <InkToolbar x:Name="PenTools" InitialControls="AllExceptPens" AutomationProperties.AutomationId="PenTools"/>
             </CommandBar.Content>
-            <AppBarButton Label="Mouse and touch" AutomationProperties.AutomationId="InputTools"
-                          ToolTipService.ToolTip="What mouse and touch do">
+            <AppBarButton Label="Add text" Click="AddText_Click" AutomationProperties.AutomationId="AddText"
+                          ToolTipService.ToolTip="Add text">
                 <AppBarButton.Icon>
-                    <FontIcon Glyph="&#xE7C9;"/>
-                </AppBarButton.Icon>
-                <AppBarButton.Flyout>
-                    <Flyout Placement="BottomEdgeAlignedRight">
-                        <local:InputToolsPanel/>
-                    </Flyout>
-                </AppBarButton.Flyout>
-            </AppBarButton>
-            <AppBarButton x:Name="PaperButton" Label="Page color" AutomationProperties.AutomationId="PaperColor"
-                          ToolTipService.ToolTip="Page color">
-                <AppBarButton.Icon>
-                    <FontIcon Glyph="&#xE790;"/>
+                    <FontIcon Glyph="&#xEF60;"/>
                 </AppBarButton.Icon>
             </AppBarButton>
-            <AppBarButton Icon="Edit" Label="Add text" Click="AddText_Click" AutomationProperties.AutomationId="AddText"
-                          ToolTipService.ToolTip="Add text"/>
             <CommandBar.SecondaryCommands>
                 <!-- Ctrl+S lives on the page, since this menu is out of the tree while it is closed. -->
                 <AppBarButton Icon="Save" Label="Save" Click="Save_Click" AutomationProperties.AutomationId="SaveNote"
                               KeyboardAcceleratorTextOverride="Ctrl+S"/>
                 <AppBarButton Icon="Delete" Label="Delete selected object" Click="Delete_Click" AutomationProperties.AutomationId="DeleteObject"/>
+                <AppBarSeparator/>
+                <!-- These open their choices under the bar rather than as a flyout of the menu, which is as wide as the page
+                     and would hide or push out whatever opened beside it. -->
+                <AppBarButton Label="Mouse and touch" Click="InputTools_Click" AutomationProperties.AutomationId="InputTools"
+                              ToolTipService.ToolTip="What mouse and touch do">
+                    <AppBarButton.Icon>
+                        <FontIcon Glyph="&#xE7C9;"/>
+                    </AppBarButton.Icon>
+                </AppBarButton>
+                <AppBarButton Label="Page color" Click="PaperColor_Click" AutomationProperties.AutomationId="PaperColor"
+                              ToolTipService.ToolTip="Page color">
+                    <AppBarButton.Icon>
+                        <FontIcon Glyph="&#xE790;"/>
+                    </AppBarButton.Icon>
+                </AppBarButton>
                 <AppBarSeparator/>
                 <AppBarButton Icon="Setting" Label="Settings" Click="Settings_Click" AutomationProperties.AutomationId="OpenSettings"/>
             </CommandBar.SecondaryCommands>

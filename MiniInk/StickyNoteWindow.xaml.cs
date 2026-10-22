@@ -38,7 +38,8 @@ public sealed partial class StickyNoteWindow : WindowEx
         // Like a paper note: just a close button, no minimize or maximize.
         IsMinimizable = false;
         IsMaximizable = false;
-        MinWidth = 360;
+        FitToolbar();
+        App.Current.Pens.Changed += Pens_Changed;
         MinHeight = 240;
         IsAlwaysOnTop = pinned;
         // Named for Alt+Tab and the taskbar only; the note itself shows no title.
@@ -55,6 +56,11 @@ public sealed partial class StickyNoteWindow : WindowEx
     }
 
     public Task<bool> PrepareToCloseAsync() => _editor.PrepareToCloseAsync();
+
+    // The title bar holds every pen and the eraser beside the window's own buttons, so it needs room for them.
+    private void FitToolbar() => MinWidth = Math.Max(360, 240 + 40 * (App.Current.Pens.Current.Pens.Length + 1));
+
+    private void Pens_Changed(object? sender, PenChange change) => FitToolbar();
 
     public void ShowAndActivate()
     {
@@ -74,6 +80,7 @@ public sealed partial class StickyNoteWindow : WindowEx
         _allowClose = true;
         _layoutSave.Stop();
         _editor.Detach();
+        App.Current.Pens.Changed -= Pens_Changed;
         AppWindow.Changed -= AppWindow_Changed;
         AppWindow.Closing -= AppWindow_Closing;
         PageHost.Content = null;

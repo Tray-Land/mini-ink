@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Globalization;
 using Microsoft.UI.Dispatching;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
@@ -65,6 +66,23 @@ public partial class App : Application
             ? (NoteColor)value : NoteColor.Default;
         set => ApplicationData.Current.LocalSettings.Values["DefaultPaper"] = (int)value;
     }
+    // The size the popup opens at, in logical pixels; dragging its edge changes it as well as Settings.
+    public int PopupWidth => PopupSize.Width(ApplicationData.Current.LocalSettings.Values["PopupWidth"]);
+    public int PopupHeight => PopupSize.Height(ApplicationData.Current.LocalSettings.Values["PopupHeight"]);
+    public void SetPopupSize(int width, int height)
+    {
+        width = PopupSize.ClampWidth(width);
+        height = PopupSize.ClampHeight(height);
+        if (width == PopupWidth && height == PopupHeight)
+            return;
+        ApplicationData.Current.LocalSettings.Values["PopupWidth"] = width;
+        ApplicationData.Current.LocalSettings.Values["PopupHeight"] = height;
+        PopupSizeChanged?.Invoke(this, EventArgs.Empty);
+    }
+    public event EventHandler? PopupSizeChanged;
+    // A new blank page on the paper chosen in Settings, or on the given template in the paper color chosen there.
+    public Note NewPage(NoteTemplate? template = null) => NoteTemplates.Create(template ?? DefaultTemplate, DateTime.Now,
+        CultureInfo.CurrentCulture, TemplateOptions, DefaultPaper);
     // What the mouse and touch do on the canvas, shared by the popup and every sticky note.
     public InputTool MouseTool
     {
@@ -85,6 +103,10 @@ public partial class App : Application
         }
     }
     public event EventHandler? InputToolsChanged;
+    // The pens on every toolbar, with the color and size each was left at; remembered between sessions.
+    public PenStore Pens { get; } = new(
+        () => ApplicationData.Current.LocalSettings.Values["Pens"] as string,
+        json => ApplicationData.Current.LocalSettings.Values["Pens"] = json);
     private readonly StickyLayoutStore _layout = new(Path.Combine(ApplicationData.Current.LocalFolder.Path, "StickyNotes.json"));
     private readonly Dictionary<Guid, StickyNoteWindow> _stickies = [];
     public IReadOnlySet<Guid> DesktopNoteIds => _stickies.Keys.ToHashSet();
@@ -298,7 +320,7 @@ public partial class App : Application
     {
         RectInt32 near = WindowPlacementService.NearTray(400, 480);
         int cascade = _stickies.Count % 8 * 32;
-        OpenSticky(new Note { Paper = DefaultPaper }, new RectInt32(near.X - cascade, near.Y - cascade, near.Width, near.Height), draft: true);
+        OpenSticky(NewPage(), new RectInt32(near.X - cascade, near.Y - cascade, near.Width, near.Height), draft: true);
     }
 
     private void ShowStickies()
