@@ -8,8 +8,11 @@ Capture a thought, sketch with a pen, and find it later -- entirely in the tray.
 
 MiniInk is a packaged WinUI 3 tray app using **Windows App SDK
 2.5.4-experimental**, WinUIEx, and the `winui-tray-app` lifecycle pattern.
-There is no main window. The 440 by 620 logical-pixel, taskbar-anchored acrylic
-popup is the pad: a blank page on top, and your notes beneath it, newest first.
+There is no main window. The taskbar-anchored acrylic popup, 440 by 620
+logical pixels until you resize it, is the pad: a blank page on top, and your
+notes beneath it, newest first. Drag any edge or corner of the popup to resize
+it (down to 360 by 400); it opens at that size from then on, and a popup too
+big for the screen is held to what fits.
 
 Left-click the notification-area icon to toggle the popup. Right-click for
 Open MiniInk, New note, New sticky note, Show sticky notes (when any are on
@@ -53,8 +56,8 @@ the page on printed paper instead:
   axes cross and how often they are numbered, or leaves them off).
 
 The paper is printed behind the page rather than drawn on it, so the eraser and
-selection never touch it, the library's thumbnails leave it out, and it follows
-the light or dark theme. The planners keep a fixed layout, so what is written in a day or an
+selection never touch it, and it follows the light or dark theme. The library's
+thumbnails show it in miniature behind the ink. The planners keep a fixed layout, so what is written in a day or an
 hour stays there in a larger sticky window; the papers repeat to fill the page.
 An hour planner fits its rows to the window it is in only while nothing is
 written on it (tearing a blank one off fits it to the sticky window); after
@@ -79,6 +82,19 @@ opened over; changes apply immediately.
   Settings > Apps > Startup or by policy, the page says so instead of offering
   a toggle that can't change it.
 - **Open to a fresh page** (see below).
+- **New notes start on** and **New notes use the color**: the paper and the
+  color of every new blank page: the one the popup opens to, the one above the
+  newest note, the one left behind by Tear off, a new sticky note, and the
+  one New page or Ctrl+N makes.
+- **Popup**: the width and height it opens at, 360 to 2000 by 400 to 2000
+  (440 by 620 by default). They follow the popup's edges when you drag them,
+  and change the open popup at once when you set them here; **Reset** goes back
+  to the default.
+- **Pens**: the pens on every toolbar. **Add pen** puts a pen, pencil, or
+  highlighter on the end (up to five); the bin beside a pen removes it (there is
+  always at least one); drag a pen by its handle to put it in another place
+  (the toolbars follow the same order); **Reset pens** goes back to a pen, a
+  pencil, and a highlighter in their starting colors and sizes.
 - **Planners**: whether Hour by hour pages show a fixed range (and which
   hours) or the next 1 to 24 hours, and the first day of the week for Day by
   day (or the same as Windows).
@@ -106,8 +122,9 @@ handles.
 the pad into its own window, right where the popup was, and leaves a blank page
 behind. Sticky windows:
 
-- are just the page: one slim strip holds a pen and an eraser, Mouse and
-  touch, the pin, Put back in the stack, and close. There is no title box or
+- are just the page: one slim strip holds your pens and an eraser, Mouse and
+  touch, the pin, Put back in the stack, and close (the window is kept wide
+  enough for however many pens there are). There is no title box or
   toolbar; the note autosaves as you write;
 - resize freely, and their canvas grows to fill them;
 - stay above other windows when **Keep on top** (the pin) is on;
@@ -126,12 +143,21 @@ New sticky note in the tray menu opens a blank sticky window directly.
 ## Pen, mouse, and touch
 
 - **The pen always draws.** Choose a pen, pencil, highlighter, or eraser in the
-  native ink toolbar (sticky notes offer just the pen and eraser). The canvas
-  always draws in the color the toolbar shows. Pens start white on a dark page
-  and black on a light one; if the theme changes, a pen still in that starting
-  color follows it, while a color you picked stays.
-- **Mouse and touch** (the arrow-and-hand button beside the ink tools) sets
-  what the mouse does and what touch does, each one of:
+  native ink toolbar (the full toolbar also has a ruler; sticky notes leave it
+  off). The pens are the ones set in Settings, so you can keep, say, a red pen
+  and a thick highlighter; pens of a kind look and draw alike (same icon,
+  colors, and widths), each tinted with its own ink color. Right-click a pen
+  (or press and hold) and choose **Move left** or **Move right** to put it in
+  another place; Settings has the same order and a handle to drag pens by. The
+  canvas always draws in the color the toolbar shows.
+- **Pens are remembered.** The color and size each pen was left at, and the pen
+  in hand, are kept for every toolbar and the next session, so MiniInk opens
+  with the pens set up the way you left them. A pen you have not given a color
+  starts white on a dark page and black on a light (or sticky colored) one, and
+  follows the page if it changes; a color you pick stays.
+- **Mouse and touch** (in the editor's overflow menu, or the arrow-and-hand
+  button beside a sticky note's ink tools) sets what the mouse does and what
+  touch does, each one of:
   - **Add text** (the mouse's default): click or tap empty space to type
     there, or existing text to edit it.
   - **Select and drag** (touch's default): tap ink to select it together with
@@ -160,17 +186,26 @@ tray icons generated from the supplied `icon.svg`.
 
 ## Finding notes
 
-The library lists notes newest first, each with a thumbnail of its ink, its
-title, any typed text, and when it was last changed. Handwriting is not
-recognized, so ink is found by eye from its thumbnail. Search matches the
+The library lists notes newest first, each with a thumbnail of its page, its
+title, any typed text, and when it was last changed. A thumbnail shows the
+page's paper color and template with the ink on top, so notes are told apart
+at a glance. Handwriting is not recognized, so ink is found by eye from its
+thumbnail. Search matches the
 title, typed text, and date, either as the list shows it (`Oct 19`) or
 written out (`October`, `Monday`, `2026`); every whitespace-separated term
 must match.
 
-Thumbnails are small line drawings of the ink, fitted to the tile and never
-enlarged, drawn on a worker thread when a note is saved and kept with it.
-Notes saved before thumbnails existed get one drawn from their ink the first
-time the library shows them.
+Ink thumbnails are small line drawings of the ink, fitted to the tile and never
+enlarged, drawn on a worker thread when a note is saved and kept with it. Each
+stroke keeps the color it was drawn in, with highlighters drawn broad and
+translucent under the pens; black and white ink, which is what a pen writes in
+until a color is picked, is drawn in the page's ink instead, so it stays
+readable when the theme changes. Notes saved before thumbnails existed, or
+before they kept colors, get one drawn from their ink the first time the
+library shows them. The paper behind the ink is not saved: the tile
+draws it from the note's template and color each time the library opens, so it
+is a sketch of the paper rather than the page's exact layout, and a colored
+page's ink and rules go dark as they do in the editor.
 
 Each note is an atomically replaced JSON file under the package's
 `LocalState\Notes` folder, containing text positions, ISF ink encoded as

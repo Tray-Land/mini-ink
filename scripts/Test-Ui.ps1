@@ -127,7 +127,7 @@ try {
         Ui @('pen', '--path', $path, '--duration-ms', '500')
         $note = Saved { $args[0].StrokeCount -eq 1 } 'The pen stroke was not saved.'
         if ($note.InkBase64.Length -eq 0) { throw 'Ink was not persisted.' }
-        if ($note.Thumbnail -notmatch '^M[\d.]+,[\d.]+L') { throw "No thumbnail was drawn: '$($note.Thumbnail)'" }
+        if ($note.Thumbnail -notmatch '^p[0-9A-F]{8}\|M[\d.]+,[\d.]+L') { throw "No thumbnail was drawn: '$($note.Thumbnail)'" }
     }
     Test 'Tap selects ink; touch drags the selected group' {
         Ui @('touch', '--at', (Point 85 260))
@@ -224,13 +224,142 @@ try {
         Ui @('invoke', 'OpenSettings')
         Ui @('wait-for', 'SettingsBack', '-t', '5000')
         $shown = @(Nodes @((Inspect).windows | ForEach-Object { $_.elements }) | ForEach-Object { $_.automationId })
-        $missing = @('StartWithWindows', 'FreshAfter', 'HourRange', 'DayStartsAt', 'DayEndsAt', 'WeekStartsOn', 'GraphAxes', 'GraphNumbers' |
+        $missing = @('StartWithWindows', 'FreshAfter', 'HourRange', 'DayStartsAt', 'DayEndsAt', 'WeekStartsOn', 'GraphAxes', 'GraphNumbers', 'PopupWidth', 'PopupHeight', 'ResetPopupSize', 'AddPen', 'ResetPens', 'RemovePen0' |
             Where-Object { $_ -notin $shown })
         if ($missing.Count) { throw "Settings is missing $($missing -join ', ')." }
         Capture '07-settings.png'
         Ui @('send-keys', 'escape', '--via', 'send-input')
         Ui @('wait-for', 'NewNote', '-t', '5000')
         if (-not (Element 'NewNote')) { throw 'Escape put the popup down instead of leaving settings.' }
+    }
+    Test 'A pen is added and removed in Settings' {
+        function PenRows { @(Nodes @((Inspect).windows | ForEach-Object { $_.elements }) | Where-Object { $_.automationId -like 'RemovePen*' }) }
+        Ui @('invoke', 'OpenSettings')
+        Ui @('wait-for', 'AddPen', '-t', '5000')
+        $rows = PenRows
+        if ($rows.Count -ge 5) { throw 'The test needs room to add a pen.' }
+        # A new pen goes on the end, whatever the pens set up before.
+        Ui @('invoke', 'AddPen')
+        Ui @('wait-for', 'AddPenBallpoint', '-t', '4000')
+        Ui @('invoke', 'AddPenBallpoint')
+        Ui @('wait-for', "RemovePen$($rows.Count)", '-t', '4000')
+        Capture '08-pens.png'
+        Ui @('invoke', "RemovePen$($rows.Count)")
+        Ui @('wait-for', "RemovePen$($rows.Count)", '--gone', '-t', '4000')
+        if ((PenRows).Count -ne $rows.Count) { throw 'Removing the added pen did not put the pens back.' }
+        Ui @('send-keys', 'escape', '--via', 'send-input')
+        Ui @('wait-for', 'NewNote', '-t', '5000')
+    }
+    Test 'Pens are put in order by dragging in Settings and from the toolbar menu' {
+        function PenNames { @(Nodes @((Inspect).windows | ForEach-Object { $_.elements }) | Where-Object { $_.automationId -like 'RemovePen*' } |
+            Sort-Object automationId | ForEach-Object { $_.name -replace '^Remove ', '' }) }
+        function Kind([string]$Name) { $Name -replace ' \d+$', '' }
+        Ui @('invoke', 'OpenSettings')
+        Ui @('wait-for', 'AddPen', '-t', '5000')
+        $start = PenNames
+        if ($start.Count -ge 5) { throw 'The test needs room to add a pen.' }
+        # A pen of a kind the first one is not, so that putting it first shows in the names. A pen of a kind is
+        # named for it ("Pencil"), and numbered only when it is not the first of its kind.
+        $kind = if ((Kind $start[0]) -eq 'Highlighter') { 'Pencil' } else { 'Highlighter' }
+        $added = $start.Count
+        Ui @('invoke', 'AddPen')
+        Ui @('wait-for', "AddPen$kind", '-t', '4000')
+        Ui @('invoke', "AddPen$kind")
+        Ui @('wait-for', "RemovePen$added", '-t', '4000')
+        # Where the added pen is, as far as the test has seen, so that it can be the one taken away.
+        $position = $added
+        try {
+            Ui @('drag', "MovePen$added", 'MovePen0')
+            Ui @('wait-for', 'RemovePen0', '--property', 'Name', '--value', "Remove $kind", '-t', '4000')
+            $position = 0
+            $names = PenNames
+            if ($names.Count -ne $added + 1 -or (Kind $names[0]) -ne $kind) { throw "Dragging the pen to the top left the pens as: $($names -join ', ')." }
+            Capture '09-pen-order.png'
+            # Settings were opened over the library, so the toolbar is in a blank page opened from it.
+            Ui @('send-keys', 'escape', '--via', 'send-input')
+            Ui @('wait-for', 'NewNote', '-t', '5000')
+            Ui @('invoke', 'NewNote')
+            Ui @('wait-for', 'Pen0', '--property', 'Name', '--value', $names[0], '-t', '10000')
+            Ui @('click', 'Pen0', '--right')
+            Ui @('wait-for', 'MovePenRight', '-t', '4000')
+            Ui @('wait-for', 'MovePenLeft', '--property', 'IsEnabled', '--value', 'False', '-t', '4000')
+            Ui @('invoke', 'MovePenRight')
+            Ui @('wait-for', 'Pen1', '--property', 'Name', '--value', $names[0], '-t', '4000')
+            Ui @('wait-for', 'Pen0', '--property', 'Name', '--value', $names[1], '-t', '4000')
+            $position = 1
+            Capture '10-pen-menu.png'
+        }
+        finally {
+            # Whatever came of it, the pen added here goes, leaving the others as they were. This is only
+            # tidying up, so it does not hide why the test failed.
+            try {
+                if (-not (Element 'AddPen')) {
+                    if (Element 'MoreButton') {
+                        Ui @('invoke', 'MoreButton')
+                        Ui @('wait-for', 'OpenSettings', '-t', '4000')
+                        Ui @('invoke', 'OpenSettings')
+                    }
+                    Ui @('wait-for', 'AddPen', '-t', '5000')
+                }
+                if ((PenNames).Count -eq $added + 1) { Ui @('invoke', "RemovePen$position") }
+            }
+            catch { }
+        }
+        Ui @('wait-for', "RemovePen$added", '--gone', '-t', '4000')
+        $restored = (PenNames) -join ', '
+        if ($restored -ne ($start -join ', ')) { throw "Taking the added pen away left the pens as: $restored." }
+        Ui @('send-keys', 'escape', '--via', 'send-input')
+        Ui @('wait-for', 'NoteTitle', '-t', '5000')
+        Ui @('invoke', 'BackToNotes')
+        Ui @('wait-for', 'NewNote', '-t', '5000')
+    }
+    Test 'The popup is resized in Settings and by dragging its edge' {
+        function PopupPixels {
+            $window = @(Checked @('ui', 'list-windows', '-a', "$AppPid", '--json') | ConvertFrom-Json) | Where-Object { "$($_.hwnd)" -eq $hwnd }
+            "$($window.width)x$($window.height)"
+        }
+        function WaitForSize([int]$Width, [int]$Height) {
+            $expected = "$([Math]::Ceiling($Width * $scale))x$([Math]::Ceiling($Height * $scale))"
+            $deadline = [DateTime]::UtcNow.AddSeconds(5)
+            do { Start-Sleep -Milliseconds 250; $now = PopupPixels } while ($now -ne $expected -and [DateTime]::UtcNow -lt $deadline)
+            if ($now -ne $expected) { throw "The popup is $now pixels, not $expected." }
+        }
+        function Box([string]$Id) { (Nodes @((Element $Id).children) | Where-Object { $_.automationId -eq 'InputBox' }).value }
+        Ui @('invoke', 'OpenSettings')
+        Ui @('wait-for', 'PopupWidth', '-t', '5000')
+        # The size to leave the popup at, which is the one it had.
+        $opened = (PopupPixels) -split 'x'
+        $width = [int][Math]::Round([int]$opened[0] / $scale)
+        $height = [int][Math]::Round([int]$opened[1] / $scale)
+        try {
+            Ui @('set-value', 'PopupWidth', '520')
+            Ui @('set-value', 'PopupHeight', '500')
+            WaitForSize 520 500
+            Ui @('invoke', 'ResetPopupSize')
+            WaitForSize 440 620
+            if ((Box 'PopupWidth') -ne '440' -or (Box 'PopupHeight') -ne '620') { throw 'Reset left the boxes at another size.' }
+            # The left edge is dragged in, so the popup is narrower and its right edge stays where it was.
+            $window = (Inspect).windows[0].elements[0]
+            $x = [int]$window.x + 2
+            $y = [int]($window.y + $window.height / 2)
+            Ui @('drag', "$x,$y", "$([int]($x + 40 * $scale)),$y")
+            WaitForSize 400 620
+            $deadline = [DateTime]::UtcNow.AddSeconds(5)
+            while ((Box 'PopupWidth') -ne '400' -and [DateTime]::UtcNow -lt $deadline) { Start-Sleep -Milliseconds 250 }
+            if ((Box 'PopupWidth') -ne '400') { throw "Dragging the popup's edge left the width box at $(Box 'PopupWidth'), not 400." }
+            Capture '11-popup-size.png'
+        }
+        finally {
+            # Tidying up, so it does not hide why the test failed.
+            try {
+                Ui @('set-value', 'PopupWidth', "$width")
+                Ui @('set-value', 'PopupHeight', "$height")
+            }
+            catch { }
+        }
+        WaitForSize $width $height
+        Ui @('send-keys', 'escape', '--via', 'send-input')
+        Ui @('wait-for', 'NewNote', '-t', '5000')
     }
 } catch {
     $results.Add(@{ name='UI execution'; status='FAIL'; detail="$_" })
