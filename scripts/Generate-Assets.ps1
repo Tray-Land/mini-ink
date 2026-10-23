@@ -1,4 +1,4 @@
-param([string]$Source = (Join-Path $PSScriptRoot '..\icon.svg'))
+param([string]$Source = (Join-Path $PSScriptRoot '..\branding\icon.svg'))
 $ErrorActionPreference = 'Stop'
 $project = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..\MiniInk'))
 $branding = Join-Path $PSScriptRoot '..\branding'

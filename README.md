@@ -182,7 +182,7 @@ minimum. It grows to keep anything placed further out, such as ink drawn in a
 large sticky window, so smaller windows show that content with scrollbars.
 Scrolling never takes over touch; it stays with the chosen touch tool.
 The popup follows the **taskbar's** light/dark mode, including theme-specific
-tray icons generated from the supplied `icon.svg`.
+tray icons generated from the supplied `branding\icon.svg`.
 
 ## Finding notes
 

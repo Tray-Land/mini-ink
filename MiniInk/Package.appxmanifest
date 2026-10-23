@@ -10,13 +10,13 @@
 
   <Identity
     Name="79F360F7-8614-43F8-BA5C-65F81BCEA4E2"
-    Publisher="CN=AppPublisher"
+    Publisher="CN=Joseph Finney, O=Joseph Finney, L=Milwaukee, S=Wisconsin, C=US, PostalCode=53212"
     Version="1.0.0.0" />
 
 
   <Properties>
     <DisplayName>MiniInk</DisplayName>
-    <PublisherDisplayName>AppPublisher</PublisherDisplayName>
+    <PublisherDisplayName>JoeFinApps</PublisherDisplayName>
     <Logo>Assets\StoreLogo.png</Logo>
     <uap10:PackageIntegrity>
       <uap10:Content Enforcement="on"/>
