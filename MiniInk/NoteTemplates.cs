@@ -75,7 +75,7 @@ public sealed record TemplateOptions
     public GraphOrigin GraphOrigin { get; init; }
     // How many squares apart the axis numbers are; 0 leaves them off.
     public int GraphNumbers { get; init; } = 5;
-    public static IReadOnlyList<int> GraphNumberChoices { get; } = [5, 10, 1, 0];
+    public static IReadOnlyList<int> GraphNumberChoices { get; } = (int[])[5, 10, 1, 0];
 
     [JsonIgnore]
     public bool IsValid => Enum.IsDefined(HourRange) && StartHour is >= 0 and < 24 && EndHour > StartHour && EndHour <= StartHour + 24 &&

@@ -534,7 +534,7 @@ public sealed partial class EditorPage : Page
         (uint Id, Rect Bounds) hit = hits.MinBy(s => s.Bounds.Width * s.Bounds.Height);
         List<(uint Id, Rect Near)> rest = strokes.Where(s => s.Id != hit.Id).Select(s => (s.Id, Inflate(s.Bounds, 4))).ToList();
         HashSet<uint> group = [hit.Id];
-        Queue<Rect> reached = new([Inflate(hit.Bounds, 4)]);
+        Queue<Rect> reached = new((Rect[])[Inflate(hit.Bounds, 4)]);
         while (reached.TryDequeue(out Rect near))
         {
             foreach ((uint Id, Rect Near) stroke in rest.Where(s => near.X <= s.Near.Right && s.Near.X <= near.Right &&

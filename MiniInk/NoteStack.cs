@@ -34,7 +34,7 @@ public static class FreshPagePolicy
 {
     public const int DefaultMinutes = 5;
     // Minutes away before the popup opens on a blank page; 0 always reopens the last note.
-    public static IReadOnlyList<int> Choices { get; } = [1, 5, 15, 60, 0];
+    public static IReadOnlyList<int> Choices { get; } = (int[])[1, 5, 15, 60, 0];
 
     public static bool ShouldStartFresh(DateTimeOffset? lastUsed, DateTimeOffset now, int minutes) =>
         minutes > 0 && (lastUsed is not DateTimeOffset last || now - last >= TimeSpan.FromMinutes(minutes));
