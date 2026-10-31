@@ -217,6 +217,16 @@ There are no accounts, API keys, network calls, or cloud uploads. Idle memory
 is released once the popup and every sticky window have closed; no network
 polling runs while hidden.
 
+## Install
+
+Download [MiniInk.appinstaller](https://github.com/Tray-Land/mini-ink/releases/latest/download/MiniInk.appinstaller)
+and open it. Windows installs the right version for your PC (x64 or ARM64),
+plus the Windows App Runtime if it is missing, and keeps MiniInk up to date.
+
+- Requires Windows 10 1809 (build 17763) or later, x64 or ARM64.
+- Installed 1.0.0 from the `.msix` files? Open the `.appinstaller` once. It
+  upgrades the app in place, keeps your notes, and turns on automatic updates.
+
 ## Build and run
 
 Requirements: Windows 10/11 with the supported Windows App SDK runtime,
@@ -229,8 +239,17 @@ winget install Microsoft.WinAppCli
 winapp run .\MiniInk\MiniInk.csproj --detach
 ```
 
-No signed release installer is included yet. The CLI registers a development
-package locally; it is not a Microsoft Store installation.
+The CLI registers a development package locally; it is not a Microsoft Store
+installation.
+
+To build a release, bump `Identity/@Version` in `MiniInk\Package.appxmanifest`,
+commit and push, then run `.\build-msix-for-gh.ps1` from a PowerShell session
+with the maintainer's `sign-msix` function. It builds a signed x64 + ARM64
+`.msixbundle` and the `MiniInk.appinstaller` feed, checks them, and drafts a
+GitHub release. Publish the draft without changing its tag, then run
+`.\build-msix-for-gh.ps1 -VerifyPublished`. `.\build-msix-for-gh.ps1
+-SkipRelease -NoSign` checks the whole build without signing. The script is a
+copy of the one in the `winui-tray-app` skill; fix it there, not here.
 
 ```powershell
 # Pure search, thumbnails, stack order, fresh-page timing, templates, sticky layout, storage, and corruption checks
