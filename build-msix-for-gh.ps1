@@ -209,8 +209,8 @@ function Get-FrameworkPackages {
     $packageFolders = @($assets.packageFolders.PSObject.Properties.Name)
 
     foreach ($build in $builds) {
-        # Microsoft.WindowsAppRuntime.2.msix or .1.6.msix; not the .Main, .DDLM or .Singleton packages.
-        $pattern = "^tools/MSIX/win10-$($build.Name)/Microsoft\.WindowsAppRuntime\.\d+(\.\d+)?\.msix$"
+        # Microsoft.WindowsAppRuntime.2.msix, .1.6.msix or .2-experimentalF.msix; not the .Main, .DDLM or .Singleton packages.
+        $pattern = "^tools/MSIX/win10-$($build.Name)/Microsoft\.WindowsAppRuntime\.\d+(\.\d+)?(-[A-Za-z0-9]+)?\.msix$"
         $sources = foreach ($library in $assets.libraries.PSObject.Properties) {
             foreach ($file in @(@($library.Value.files) -match $pattern)) {
                 $packageFolders |
